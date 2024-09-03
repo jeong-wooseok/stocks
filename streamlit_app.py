@@ -76,7 +76,7 @@ def perform_arima_analysis(data):
     # 예측
     forecast = results.forecast(steps=30)
     
-    # 트렌드 판단
+    # 트렜드 판단
     last_value = data.iloc[-1]
     forecast_end = forecast.iloc[-1]
     percent_change = (forecast_end - last_value) / last_value * 100
