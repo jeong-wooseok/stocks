@@ -8,4 +8,3 @@ cufflinks
 pyarrow
 statsmodels
 scikit-learn
-pmdarima
