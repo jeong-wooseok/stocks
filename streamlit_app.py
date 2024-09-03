@@ -196,37 +196,88 @@ data_exp.download_button(
     mime="text/csv",
 )
 
-# Chart creation
-fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
+# 차트 생성 함수 추가
+def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods):
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
 
-# Candlestick chart
-fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='OHLC'), row=1, col=1)
+    # Candlestick chart
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+        name='OHLC', increasing_line_color=color_palette['candlestick_increasing'],
+        decreasing_line_color=color_palette['candlestick_decreasing']
+    ), row=1, col=1)
 
-if sma_flag:
-    df = add_sma(df, sma_periods)
-    fig.add_trace(go.Scatter(x=df.index, y=df[f'SMA_{sma_periods}'], name=f'SMA {sma_periods}', line=dict(color='orange', width=1)), row=1, col=1)
+    if sma_flag:
+        df = add_sma(df, sma_periods)
+        fig.add_trace(go.Scatter(x=df.index, y=df[f'SMA_{sma_periods}'], name=f'SMA {sma_periods}', 
+                                 line=dict(color=color_palette['sma'], width=1)), row=1, col=1)
 
-if bb_flag:
-    df = add_bollinger_bands(df, bb_periods, bb_std)
-    fig.add_trace(go.Scatter(x=df.index, y=df[f'BB_upper_{bb_periods}'], name=f'BB Upper', line=dict(color='lightgrey', width=1)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df[f'BB_middle_{bb_periods}'], name=f'BB Middle', line=dict(color='grey', width=1)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df[f'BB_lower_{bb_periods}'], name=f'BB Lower', line=dict(color='lightgrey', width=1)), row=1, col=1)
+    if bb_flag:
+        df = add_bollinger_bands(df, bb_periods, bb_std)
+        fig.add_trace(go.Scatter(x=df.index, y=df[f'BB_upper_{bb_periods}'], name=f'BB Upper', 
+                                 line=dict(color=color_palette['bb_upper'], width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df[f'BB_middle_{bb_periods}'], name=f'BB Middle', 
+                                 line=dict(color=color_palette['bb_middle'], width=1)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=df.index, y=df[f'BB_lower_{bb_periods}'], name=f'BB Lower', 
+                                 line=dict(color=color_palette['bb_lower'], width=1)), row=1, col=1)
 
-if volume_flag:
-    fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color='lightblue'), row=2, col=1)
+    if volume_flag:
+        fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', 
+                             marker_color=color_palette['volume']), row=2, col=1)
 
-if rsi_flag:
-    df = add_rsi(df, rsi_periods)
-    fig.add_trace(go.Scatter(x=df.index, y=df[f'RSI_{rsi_periods}'], name=f'RSI {rsi_periods}', line=dict(color='purple', width=1)), row=2, col=1)
-    fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
-    fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+    if rsi_flag:
+        df = add_rsi(df, rsi_periods)
+        fig.add_trace(go.Scatter(x=df.index, y=df[f'RSI_{rsi_periods}'], name=f'RSI {rsi_periods}', 
+                                 line=dict(color=color_palette['rsi'], width=1)), row=2, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
 
-fig.update_layout(
-    title=f"{tickers_companies_dict[ticker]}'s stock price",
-    yaxis_title="Price",
-    xaxis_rangeslider_visible=False,
-    height=800
-)
+    fig.update_layout(
+        title=f"{tickers_companies_dict[ticker]}'s stock price",
+        yaxis_title="Price",
+        xaxis_rangeslider_visible=False,
+        height=800,
+        plot_bgcolor=color_palette['background'],
+        paper_bgcolor=color_palette['background'],
+        font_color=color_palette['text'],
+        hovermode='x unified',
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
+
+    return fig
+
+# 시계열 분해 차트 생성 함수 추가
+def create_decomposition_chart(log_data, diff_data, trend, seasonal, residual):
+    fig = make_subplots(rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.05,
+                        subplot_titles=("원본 데이터 (로그 스케일)", "차분된 데이터", "추세", "계절성", "잔차"))
+    
+    fig.add_trace(go.Scatter(x=log_data.index, y=log_data, mode='lines', name='원본 데이터 (로그)', 
+                             line=dict(color=color_palette['log_data'])), row=1, col=1)
+    fig.add_trace(go.Scatter(x=diff_data.index, y=diff_data, mode='lines', name='차분된 데이터', 
+                             line=dict(color=color_palette['diff_data'])), row=2, col=1)
+    fig.add_trace(go.Scatter(x=trend.index, y=trend, mode='lines', name='추세', 
+                             line=dict(color=color_palette['trend'])), row=3, col=1)
+    fig.add_trace(go.Scatter(x=seasonal.index, y=seasonal, mode='lines', name='계절성', 
+                             line=dict(color=color_palette['seasonal'])), row=4, col=1)
+    fig.add_trace(go.Scatter(x=residual.index, y=residual, mode='lines', name='잔차', 
+                             line=dict(color=color_palette['residual'])), row=5, col=1)
+    
+    fig.update_layout(
+        height=1200, 
+        title_text="시계열 분해 결과",
+        plot_bgcolor=color_palette['background'],
+        paper_bgcolor=color_palette['background'],
+        font_color=color_palette['text'],
+        hovermode='x unified'
+    )
+
+    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
+    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
+
+    return fig
 
 # 차트 생성
 st.plotly_chart(create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods), use_container_width=True)
