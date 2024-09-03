@@ -65,31 +65,44 @@ color_palette = {
     'residual': '#E53935',
     'forecast': '#FF6F00'
 }
-# ARIMA 모델 함수 수정 (들여쓰기 수정)
-def perform_arima_analysis(data):
-    model = ARIMA(data, order=(1,1,1))
-    results = model.fit()
-    
-    summary = str(results.summary())
-    forecast = results.forecast(steps=30)
-    
-    last_value = data.iloc[-1]
-    forecast_end = forecast.iloc[-1]
-    
+# Auto ARIMA 모델 함수로 수정
+def perform_auto_arima_analysis(data):
     try:
-        percent_change = (forecast_end - last_value) / last_value * 100
-    except ZeroDivisionError:
-        percent_change = 0
-    
-    if percent_change > 5:
-        trend = "상승"
-    elif percent_change < -5:
-        trend = "하락"
-    else:
-        trend = "횡보"
-    
-    return forecast, summary, trend, percent_change
+        model = auto_arima(data, start_p=1, start_q=1,
+                           test='adf',       # ADF 테스트 사용
+                           max_p=3, max_q=3, # 최대 p와 q 값
+                           m=1,              # 주기성 없음
+                           d=None,           # 차분 차수를 자동으로 결정
+                           seasonal=False,   # 계절성 없음
+                           start_P=0, 
+                           D=0, 
+                           trace=True,
+                           error_action='ignore',  
+                           suppress_warnings=True, 
+                           stepwise=True)
 
+        # 모델 요약
+        summary = str(model.summary())
+        
+        # 예측
+        forecast = model.predict(n_periods=30)
+        
+        last_value = data.iloc[-1]
+        forecast_end = forecast[-1]
+        
+        percent_change = ((forecast_end - last_value) / last_value) * 100
+        
+        if percent_change > 5:
+            trend = "상승"
+        elif percent_change < -5:
+            trend = "하락"
+        else:
+            trend = "횡보"
+        
+        return forecast, summary, trend, percent_change
+    except Exception as e:
+        st.error(f"Auto ARIMA 분석 중 오류가 발생했습니다: {str(e)}")
+        return None, None, None, None        
 # 시계열 분해 함수
 def perform_time_series_decomposition(data):
     data = data.dropna()
