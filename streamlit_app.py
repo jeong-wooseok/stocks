@@ -135,18 +135,6 @@ def perform_adf_test(data):
     result = adfuller(data.dropna())
     return f'ADF 통계량: {result[0]:.4f}, p-value: {result[1]:.4f}'
 
-# ARIMA model function
-def perform_arima_analysis(data):
-    model = ARIMA(data, order=(1,1,1))
-    results = model.fit()
-    
-    # Model summary
-    summary = str(results.summary())
-    
-    # Forecast
-    forecast = results.forecast(steps=30)
-    
-    return forecast, summary
 
 # Sidebar
 st.sidebar.header("Stock Parameters")
