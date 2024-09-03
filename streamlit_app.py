@@ -67,7 +67,6 @@ color_palette = {
 }
 
 # ARIMA 모델 함수
-def perform_arima_analysis(data):
     model = ARIMA(data, order=(1,1,1))
     results = model.fit()
     
@@ -76,7 +75,11 @@ def perform_arima_analysis(data):
     
     last_value = data.iloc[-1]
     forecast_end = forecast.iloc[-1]
-    percent_change = (forecast_end - last_value) / last_value * 100
+    
+    try:
+        percent_change = (forecast_end - last_value) / last_value * 100
+    except ZeroDivisionError:
+        percent_change = 0
     
     if percent_change > 5:
         trend = "상승"
