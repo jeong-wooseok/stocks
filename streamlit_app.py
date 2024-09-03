@@ -3,13 +3,9 @@ import yfinance as yf
 import streamlit as st
 import datetime 
 import pandas as pd
-import cufflinks as cf
-from plotly.offline import iplot
+import numpy as np
 from plotly.subplots import make_subplots
-#from streamlit.cache import cache_data, cache_resource
-
-## set offline mode for cufflinks
-cf.go_offline()
+from statsmodels.tsa.arima.model import ARIMA
 
 # data functions
 @st.cache_data
@@ -17,9 +13,7 @@ def get_sp500_components():
     df = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
     df = df[0]
     tickers = df["Symbol"].to_list()
-    tickers_companies_dict = dict(
-        zip(df["Symbol"], df["Security"])
-    )
+    tickers_companies_dict = dict(zip(df["Symbol"], df["Security"]))
     return tickers, tickers_companies_dict
 
 @st.cache_data
@@ -30,73 +24,60 @@ def load_data(symbol, start, end):
 def convert_df_to_csv(df):
     return df.to_csv().encode("utf-8")
 
-# sidebar
+# Technical indicators
+def add_sma(df, period):
+    df[f'SMA_{period}'] = df['Close'].rolling(window=period).mean()
+    return df
 
-## inputs for downloading data
+def add_bollinger_bands(df, period, std_dev):
+    df[f'BB_middle_{period}'] = df['Close'].rolling(window=period).mean()
+    df[f'BB_upper_{period}'] = df[f'BB_middle_{period}'] + (df['Close'].rolling(window=period).std() * std_dev)
+    df[f'BB_lower_{period}'] = df[f'BB_middle_{period}'] - (df['Close'].rolling(window=period).std() * std_dev)
+    return df
+
+def add_rsi(df, period):
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
+    return df
+
+# ARIMA model function
+def perform_arima_analysis(data):
+    model = ARIMA(data, order=(1,1,1))
+    results = model.fit()
+    
+    # Model summary
+    summary = str(results.summary())
+    
+    # Forecast
+    forecast = results.forecast(steps=30)
+    
+    return forecast, summary
+
+# Sidebar
 st.sidebar.header("Stock Parameters")
-
 available_tickers, tickers_companies_dict = get_sp500_components()
-
-ticker = st.sidebar.selectbox(
-    "Ticker", 
-    available_tickers, 
-    format_func=tickers_companies_dict.get
-)
-start_date = st.sidebar.date_input(
-    "Start date", 
-    datetime.date(2019, 1, 1)
-)
-end_date = st.sidebar.date_input(
-    "End date", 
-    datetime.date.today()
-)
+ticker = st.sidebar.selectbox("Ticker", available_tickers, format_func=tickers_companies_dict.get)
+start_date = st.sidebar.date_input("Start date", datetime.date(2019, 1, 1))
+end_date = st.sidebar.date_input("End date", datetime.date.today())
 
 if start_date > end_date:
     st.sidebar.error("The end date must fall after the start date")
 
-## inputs for technical analysis
+# Technical Analysis Parameters
 st.sidebar.header("Technical Analysis Parameters")
-
 volume_flag = st.sidebar.checkbox(label="Add volume")
+sma_flag = st.sidebar.checkbox(label="Add SMA")
+sma_periods = st.sidebar.number_input("SMA Periods", min_value=1, max_value=50, value=20, step=1)
+bb_flag = st.sidebar.checkbox(label="Add Bollinger Bands")
+bb_periods = st.sidebar.number_input("BB Periods", min_value=1, max_value=50, value=20, step=1)
+bb_std = st.sidebar.number_input("# of standard deviations", min_value=1, max_value=4, value=2, step=1)
+rsi_flag = st.sidebar.checkbox(label="Add RSI")
+rsi_periods = st.sidebar.number_input("RSI Periods", min_value=1, max_value=50, value=14, step=1)
 
-exp_sma = st.sidebar.expander("SMA")
-sma_flag = exp_sma.checkbox(label="Add SMA")
-sma_periods= exp_sma.number_input(
-    label="SMA Periods", 
-    min_value=1, 
-    max_value=50, 
-    value=20, 
-    step=1
-)
-
-exp_bb = st.sidebar.expander("Bollinger Bands")
-bb_flag = exp_bb.checkbox(label="Add Bollinger Bands")
-bb_periods= exp_bb.number_input(label="BB Periods", 
-                                min_value=1, max_value=50, 
-                                value=20, step=1)
-bb_std= exp_bb.number_input(label="# of standard deviations", 
-                            min_value=1, max_value=4, 
-                            value=2, step=1)
-
-exp_rsi = st.sidebar.expander("Relative Strength Index")
-rsi_flag = exp_rsi.checkbox(label="Add RSI")
-rsi_periods= exp_rsi.number_input(
-    label="RSI Periods", 
-    min_value=1, 
-    max_value=50, 
-    value=20, 
-    step=1
-)
-rsi_upper= exp_rsi.number_input(label="RSI Upper", 
-                                min_value=50, 
-                                max_value=90, value=70, 
-                                step=1)
-rsi_lower= exp_rsi.number_input(label="RSI Lower", 
-                                min_value=10, 
-                                max_value=50, value=30, 
-                                step=1)
-
-# 메인 부분
+# Main body
 st.title("티커 기술적 분석 웹 서비스")
 st.write("""
 ### User manual
@@ -107,10 +88,27 @@ st.write("""
 - 지표의 다양한 매개변수를 실험해 볼 수 있습니다.
 """)
 
-# 차트 생성
+# Load data
+df = load_data(ticker, start_date, end_date)
+
+# Data preview
+data_exp = st.expander("Preview data")
+available_cols = df.columns.tolist()
+columns_to_show = data_exp.multiselect("Columns", available_cols, default=available_cols)
+data_exp.dataframe(df[columns_to_show])
+
+csv_file = convert_df_to_csv(df[columns_to_show])
+data_exp.download_button(
+    label="Download selected as CSV",
+    data=csv_file,
+    file_name=f"{ticker}_stock_prices.csv",
+    mime="text/csv",
+)
+
+# Chart creation
 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
 
-# 캔들스틱 차트
+# Candlestick chart
 fig.add_trace(go.Candlestick(x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'], name='OHLC'), row=1, col=1)
 
 if sma_flag:
@@ -141,21 +139,20 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# Auto ARIMA 분석 섹션
-# ARIMA 분석 섹션
+# ARIMA analysis section
 st.header("ARIMA 분석")
 if st.button("ARIMA 분석 수행"):
     with st.spinner("ARIMA 분석 중..."):
         forecast, summary = perform_arima_analysis(df['Close'])
         
-        # 모델 요약
+        # Model summary
         st.subheader("ARIMA 모델 요약")
         st.text(summary)
         
-        # 예측 및 시각화
+        # Forecast and visualization
         index_of_fc = pd.date_range(df.index[-1] + pd.Timedelta(days=1), periods=30, freq='D')
 
-        # 결과 시각화
+        # Result visualization
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격'))
         fig.add_trace(go.Scatter(x=index_of_fc, y=forecast, mode='lines', name='예측', line=dict(color='red')))
@@ -167,11 +164,11 @@ if st.button("ARIMA 분석 수행"):
         
         st.plotly_chart(fig, use_container_width=True)
         
-        # 트렌드 존재 여부 판단
+        # Trend existence determination
         trend_diff = np.diff(forecast)
         trend_direction = np.mean(trend_diff)
         
-        if abs(trend_direction) > 0.01:  # 임계값 설정 (필요에 따라 조정 가능)
+        if abs(trend_direction) > 0.01:  # Threshold setting (can be adjusted as needed)
             trend_message = "상승" if trend_direction > 0 else "하락"
             st.success(f"분석 결과, 향후 30일 동안 {trend_message} 트렌드가 예상됩니다.")
         else:
