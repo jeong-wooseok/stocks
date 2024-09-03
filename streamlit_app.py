@@ -44,7 +44,19 @@ def add_rsi(df, period):
     df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
     return df
 
-# 시계열 분해 함수 수정
+import plotly.graph_objects as go
+import yfinance as yf
+import streamlit as st
+import datetime 
+import pandas as pd
+import numpy as np
+from plotly.subplots import make_subplots
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.stattools import adfuller
+
+# (기존 함수들은 그대로 유지)
+
+# 수정된 시계열 분해 함수
 def perform_time_series_decomposition(data):
     # 결측값 처리
     data = data.dropna()
@@ -59,14 +71,35 @@ def perform_time_series_decomposition(data):
     # 결측값이 있으면 보간
     data = data.interpolate()
     
-    # seasonal_decompose 수행
-    decomposition = seasonal_decompose(data, model='additive', period=30)
+    # 로그 변환 (선택적)
+    log_data = np.log(data)
+    
+    # 차분
+    diff_data = log_data.diff().dropna()
+    
+    # 원본 데이터 분해
+    decomposition = seasonal_decompose(log_data, model='additive', period=30)
     
     trend = decomposition.trend
     seasonal = decomposition.seasonal
     residual = decomposition.resid
     
-    return trend, seasonal, residual
+    return log_data, diff_data, trend, seasonal, residual
+
+# 추세 분석 함수
+def analyze_trend(trend):
+    overall_trend = trend.iloc[-1] - trend.iloc[0]
+    if overall_trend > 0:
+        return f"상승 추세가 관찰됩니다. (총 변화: {np.exp(overall_trend) - 1:.2%})"
+    elif overall_trend < 0:
+        return f"하락 추세가 관찰됩니다. (총 변화: {np.exp(overall_trend) - 1:.2%})"
+    else:
+        return "뚜렷한 추세가 관찰되지 않습니다."
+
+# ADF 테스트 함수
+def perform_adf_test(data):
+    result = adfuller(data.dropna())
+    return f'ADF 통계량: {result[0]:.4f}, p-value: {result[1]:.4f}'
 
 # ARIMA model function
 def perform_arima_analysis(data):
@@ -169,34 +202,37 @@ st.plotly_chart(fig, use_container_width=True)
 st.header("시계열 분해 분석")
 if st.button("시계열 분해 수행"):
     with st.spinner("시계열 분해 중..."):
-        trend, seasonal, residual = perform_time_series_decomposition(df['Close'])
+        log_data, diff_data, trend, seasonal, residual = perform_time_series_decomposition(df['Close'])
         
         # 결과 시각화
-        fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.05,
-                            subplot_titles=("원본 데이터", "추세", "계절성", "잔차"))
+        fig = make_subplots(rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.05,
+                            subplot_titles=("원본 데이터 (로그 스케일)", "차분된 데이터", "추세", "계절성", "잔차"))
         
-        fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='원본 데이터'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=trend.index, y=trend, mode='lines', name='추세'), row=2, col=1)
-        fig.add_trace(go.Scatter(x=seasonal.index, y=seasonal, mode='lines', name='계절성'), row=3, col=1)
-        fig.add_trace(go.Scatter(x=residual.index, y=residual, mode='lines', name='잔차'), row=4, col=1)
+        fig.add_trace(go.Scatter(x=log_data.index, y=log_data, mode='lines', name='원본 데이터 (로그)'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=diff_data.index, y=diff_data, mode='lines', name='차분된 데이터'), row=2, col=1)
+        fig.add_trace(go.Scatter(x=trend.index, y=trend, mode='lines', name='추세'), row=3, col=1)
+        fig.add_trace(go.Scatter(x=seasonal.index, y=seasonal, mode='lines', name='계절성'), row=4, col=1)
+        fig.add_trace(go.Scatter(x=residual.index, y=residual, mode='lines', name='잔차'), row=5, col=1)
         
-        fig.update_layout(height=900, title_text="시계열 분해 결과")
+        fig.update_layout(height=1200, title_text="시계열 분해 결과")
         st.plotly_chart(fig, use_container_width=True)
         
         # 추세 분석
-        overall_trend = trend.iloc[-1] - trend.iloc[0]
-        if overall_trend > 0:
-            st.success(f"분석 결과, 선택한 기간 동안 전반적인 상승 추세가 관찰됩니다. (총 변화: {overall_trend:.2f})")
-        elif overall_trend < 0:
-            st.error(f"분석 결과, 선택한 기간 동안 전반적인 하락 추세가 관찰됩니다. (총 변화: {overall_trend:.2f})")
-        else:
-            st.info("분석 결과, 선택한 기간 동안 뚜렷한 추세가 관찰되지 않습니다.")
+        st.subheader("추세 분석")
+        st.success(analyze_trend(trend))
         
         # 계절성 분석
+        st.subheader("계절성 분석")
         max_seasonality = seasonal.max()
         min_seasonality = seasonal.min()
-        st.info(f"계절성 변동 범위: {min_seasonality:.2f} ~ {max_seasonality:.2f}")
+        st.info(f"계절성 변동 범위: {np.exp(min_seasonality) - 1:.2%} ~ {np.exp(max_seasonality) - 1:.2%}")
         
         # 잔차 분석
+        st.subheader("잔차 분석")
         residual_std = residual.std()
-        st.info(f"잔차의 표준편차: {residual_std:.2f}")
+        st.info(f"잔차의 표준편차: {residual_std:.4f}")
+        
+        # 정상성 검정
+        st.subheader("정상성 검정 (ADF 테스트)")
+        st.info("원본 데이터: " + perform_adf_test(log_data))
+        st.info("차분된 데이터: " + perform_adf_test(diff_data))
