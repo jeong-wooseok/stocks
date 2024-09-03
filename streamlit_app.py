@@ -7,6 +7,7 @@ import numpy as np
 from plotly.subplots import make_subplots
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.stattools import adfuller
 # data functions
 @st.cache_data
 def get_sp500_components():
@@ -64,7 +65,7 @@ color_palette = {
     'forecast': '#FF6F00'
 }
 
-# ARIMA 모델 함수 수정
+# ARIMA 모델 함수
 def perform_arima_analysis(data):
     model = ARIMA(data, order=(1,1,1))
     results = model.fit()
