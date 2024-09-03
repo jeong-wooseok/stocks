@@ -1,35 +1,110 @@
+# imports
 import yfinance as yf
 import streamlit as st
 import datetime 
 import pandas as pd
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-from pmdarima import auto_arima
-import numpy as np
+import cufflinks as cf
+from plotly.offline import iplot
+#from streamlit.cache import cache_data, cache_resource
 
-# (기존의 함수들은 그대로 유지)
+## set offline mode for cufflinks
+cf.go_offline()
 
-# 기술적 지표 계산 함수
-def add_sma(df, period):
-    df[f'SMA_{period}'] = df['Close'].rolling(window=period).mean()
-    return df
+# data functions
+@st.cache_data
+def get_sp500_components():
+    df = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
+    df = df[0]
+    tickers = df["Symbol"].to_list()
+    tickers_companies_dict = dict(
+        zip(df["Symbol"], df["Security"])
+    )
+    return tickers, tickers_companies_dict
 
-def add_bollinger_bands(df, period, std_dev):
-    df[f'BB_middle_{period}'] = df['Close'].rolling(window=period).mean()
-    df[f'BB_upper_{period}'] = df[f'BB_middle_{period}'] + (df['Close'].rolling(window=period).std() * std_dev)
-    df[f'BB_lower_{period}'] = df[f'BB_middle_{period}'] - (df['Close'].rolling(window=period).std() * std_dev)
-    return df
+@st.cache_data
+def load_data(symbol, start, end):
+    return yf.download(symbol, start, end)
 
-def add_rsi(df, period):
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-    rs = gain / loss
-    df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
-    return df
+@st.cache_data
+def convert_df_to_csv(df):
+    return df.to_csv().encode("utf-8")
+
+# sidebar
+
+## inputs for downloading data
+st.sidebar.header("Stock Parameters")
+
+available_tickers, tickers_companies_dict = get_sp500_components()
+
+ticker = st.sidebar.selectbox(
+    "Ticker", 
+    available_tickers, 
+    format_func=tickers_companies_dict.get
+)
+start_date = st.sidebar.date_input(
+    "Start date", 
+    datetime.date(2019, 1, 1)
+)
+end_date = st.sidebar.date_input(
+    "End date", 
+    datetime.date.today()
+)
+
+if start_date > end_date:
+    st.sidebar.error("The end date must fall after the start date")
+
+## inputs for technical analysis
+st.sidebar.header("Technical Analysis Parameters")
+
+volume_flag = st.sidebar.checkbox(label="Add volume")
+
+exp_sma = st.sidebar.expander("SMA")
+sma_flag = exp_sma.checkbox(label="Add SMA")
+sma_periods= exp_sma.number_input(
+    label="SMA Periods", 
+    min_value=1, 
+    max_value=50, 
+    value=20, 
+    step=1
+)
+
+exp_bb = st.sidebar.expander("Bollinger Bands")
+bb_flag = exp_bb.checkbox(label="Add Bollinger Bands")
+bb_periods= exp_bb.number_input(label="BB Periods", 
+                                min_value=1, max_value=50, 
+                                value=20, step=1)
+bb_std= exp_bb.number_input(label="# of standard deviations", 
+                            min_value=1, max_value=4, 
+                            value=2, step=1)
+
+exp_rsi = st.sidebar.expander("Relative Strength Index")
+rsi_flag = exp_rsi.checkbox(label="Add RSI")
+rsi_periods= exp_rsi.number_input(
+    label="RSI Periods", 
+    min_value=1, 
+    max_value=50, 
+    value=20, 
+    step=1
+)
+rsi_upper= exp_rsi.number_input(label="RSI Upper", 
+                                min_value=50, 
+                                max_value=90, value=70, 
+                                step=1)
+rsi_lower= exp_rsi.number_input(label="RSI Lower", 
+                                min_value=10, 
+                                max_value=50, value=30, 
+                                step=1)
 
 # 메인 부분
 st.title("티커 기술적 분석 웹 서비스")
+st.write("""
+### User manual
+- S&P 지수의 구성 요소인 모든 회사를 선택할 수 있습니다.
+- 관심 있는 기간을 선택할 수 있습니다.
+- 선택한 데이터를 CSV 파일로 다운로드할 수 있습니다.
+- 다음 기술적 지표를 플롯에 추가할 수 있습니다: 단순 이동 평균, 볼린저 밴드, 상대 강도 지수
+- 지표의 다양한 매개변수를 실험해 볼 수 있습니다.
+""")
 
 # 차트 생성
 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
@@ -100,4 +175,3 @@ if st.button("ARIMA 분석 수행"):
             st.success(f"분석 결과, 향후 30일 동안 {trend_message} 트렌드가 예상됩니다.")
         else:
             st.info("분석 결과, 향후 30일 동안 뚜렷한 트렌드가 없을 것으로 예상됩니다.")
-
