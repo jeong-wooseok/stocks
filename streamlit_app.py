@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from plotly.subplots import make_subplots
 from statsmodels.tsa.seasonal import seasonal_decompose
-from pmdarima import auto_arima
+from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import adfuller
 
 # 데이터 함수
@@ -65,30 +65,19 @@ color_palette = {
     'residual': '#E53935',
     'forecast': '#FF6F00'
 }
-# Auto ARIMA 모델 함수로 수정
-def perform_auto_arima_analysis(data):
+def perform_arima_analysis(data):
     try:
-        model = auto_arima(data, start_p=1, start_q=1,
-                           test='adf',       # ADF 테스트 사용
-                           max_p=3, max_q=3, # 최대 p와 q 값
-                           m=1,              # 주기성 없음
-                           d=None,           # 차분 차수를 자동으로 결정
-                           seasonal=False,   # 계절성 없음
-                           start_P=0, 
-                           D=0, 
-                           trace=True,
-                           error_action='ignore',  
-                           suppress_warnings=True, 
-                           stepwise=True)
-
+        model = ARIMA(data, order=(1,1,1))
+        results = model.fit()
+        
         # 모델 요약
-        summary = str(model.summary())
+        summary = str(results.summary())
         
         # 예측
-        forecast = model.predict(n_periods=30)
+        forecast = results.forecast(steps=30)
         
         last_value = data.iloc[-1]
-        forecast_end = forecast[-1]
+        forecast_end = forecast.iloc[-1]
         
         percent_change = ((forecast_end - last_value) / last_value) * 100
         
@@ -100,9 +89,11 @@ def perform_auto_arima_analysis(data):
             trend = "횡보"
         
         return forecast, summary, trend, percent_change
+    
     except Exception as e:
-        st.error(f"Auto ARIMA 분석 중 오류가 발생했습니다: {str(e)}")
-        return None, None, None, None        
+        st.error(f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}")
+        return None, None, None, None
+        
 # 시계열 분해 함수
 def perform_time_series_decomposition(data):
     data = data.dropna()
@@ -263,29 +254,30 @@ if st.button("시계열 분해 수행"):
         st.subheader("추세 분석")
         forecast, summary, arima_trend, percent_change = perform_arima_analysis(df['Close'])
         
-        if arima_trend == "상승":
-            st.success(f"ARIMA 분석 결과, 향후 30일 동안 상승 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
-        elif arima_trend == "하락":
-            st.error(f"ARIMA 분석 결과, 향후 30일 동안 하락 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
-        else:
-            st.info(f"ARIMA 분석 결과, 향후 30일 동안 뚜렷한 추세가 없을 것으로 예상됩니다. (예상 변화: {percent_change:.2f}%)")
-        
-        # ARIMA 예측 결과 시각화
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격', line=dict(color=color_palette['log_data'])))
-        fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=31, freq='D')[1:], 
-                                 y=forecast, mode='lines', name='ARIMA 예측', line=dict(color=color_palette['forecast'])))
-        
-        fig.update_layout(title='ARIMA 모델 예측 결과',
-                          xaxis_title='날짜',
-                          yaxis_title='가격',
-                          height=500,
-                          plot_bgcolor=color_palette['background'],
-                          paper_bgcolor=color_palette['background'],
-                          font_color=color_palette['text'],
-                          hovermode='x unified')
-        
-        st.plotly_chart(fig, use_container_width=True)
+        if forecast is not None:
+            if arima_trend == "상승":
+                st.success(f"ARIMA 분석 결과, 향후 30일 동안 상승 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+            elif arima_trend == "하락":
+                st.error(f"ARIMA 분석 결과, 향후 30일 동안 하락 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+            else:
+                st.info(f"ARIMA 분석 결과, 향후 30일 동안 뚜렷한 추세가 없을 것으로 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+            
+            # ARIMA 예측 결과 시각화
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격', line=dict(color=color_palette['log_data'])))
+            fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=31, freq='D')[1:], 
+                                     y=forecast, mode='lines', name='ARIMA 예측', line=dict(color=color_palette['forecast'])))
+            
+            fig.update_layout(title='ARIMA 모델 예측 결과',
+                              xaxis_title='날짜',
+                              yaxis_title='가격',
+                              height=500,
+                              plot_bgcolor=color_palette['background'],
+                              paper_bgcolor=color_palette['background'],
+                              font_color=color_palette['text'],
+                              hovermode='x unified')
+            
+            st.plotly_chart(fig, use_container_width=True)
         
         # 계절성 분석
         st.subheader("계절성 분석")
