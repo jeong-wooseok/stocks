@@ -5,6 +5,7 @@ import datetime
 import pandas as pd
 import cufflinks as cf
 from plotly.offline import iplot
+from plotly.subplots import make_subplots
 #from streamlit.cache import cache_data, cache_resource
 
 ## set offline mode for cufflinks
