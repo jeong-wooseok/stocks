@@ -4,6 +4,7 @@ yfinance
 plotly
 Pillow
 numpy
+cufflinks
 pyarrow
 statsmodels
 scikit-learn
