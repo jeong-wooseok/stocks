@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from plotly.subplots import make_subplots
 from statsmodels.tsa.seasonal import seasonal_decompose
-from statsmodels.tsa.arima.model import ARIMA
+from pmdarima import auto_arima
 from statsmodels.tsa.stattools import adfuller
 
 # 데이터 함수
