@@ -8,7 +8,8 @@ from plotly.subplots import make_subplots
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import adfuller
-# data functions
+
+# 데이터 함수
 @st.cache_data
 def get_sp500_components():
     df = pd.read_html("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies")
@@ -25,7 +26,7 @@ def load_data(symbol, start, end):
 def convert_df_to_csv(df):
     return df.to_csv().encode("utf-8")
 
-# Technical indicators
+# 기술적 지표
 def add_sma(df, period):
     df[f'SMA_{period}'] = df['Close'].rolling(window=period).mean()
     return df
@@ -44,7 +45,7 @@ def add_rsi(df, period):
     df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
     return df
 
-# 차트 색상 팔레트 정의
+# 차트 색상 팔레트
 color_palette = {
     'background': '#F0F2F6',
     'text': '#262730',
@@ -70,13 +71,9 @@ def perform_arima_analysis(data):
     model = ARIMA(data, order=(1,1,1))
     results = model.fit()
     
-    # 모델 요약
     summary = str(results.summary())
-    
-    # 예측
     forecast = results.forecast(steps=30)
     
-    # 트렜드 판단
     last_value = data.iloc[-1]
     forecast_end = forecast.iloc[-1]
     percent_change = (forecast_end - last_value) / last_value * 100
@@ -92,26 +89,14 @@ def perform_arima_analysis(data):
 
 # 시계열 분해 함수
 def perform_time_series_decomposition(data):
-    # 결측값 처리
     data = data.dropna()
-    
-    # 인덱스가 DatetimeIndex인지 확인하고 아니면 변환
     if not isinstance(data.index, pd.DatetimeIndex):
         data.index = pd.to_datetime(data.index)
+    data = data.resample('D').mean().interpolate()
     
-    # 일별 데이터로 리샘플링 (필요한 경우)
-    data = data.resample('D').mean()
-    
-    # 결측값이 있으면 보간
-    data = data.interpolate()
-    
-    # 로그 변환 (선택적)
     log_data = np.log(data)
-    
-    # 차분
     diff_data = log_data.diff().dropna()
     
-    # 원본 데이터 분해
     decomposition = seasonal_decompose(log_data, model='additive', period=30)
     
     trend = decomposition.trend
@@ -120,76 +105,15 @@ def perform_time_series_decomposition(data):
     
     return log_data, diff_data, trend, seasonal, residual
 
-# 추세 분석 함수
-def analyze_trend(trend):
-    overall_trend = trend.iloc[-1] - trend.iloc[0]
-    if overall_trend > 0:
-        return f"상승 추세가 관찰됩니다. (총 변화: {np.exp(overall_trend) - 1:.2%})"
-    elif overall_trend < 0:
-        return f"하락 추세가 관찰됩니다. (총 변화: {np.exp(overall_trend) - 1:.2%})"
-    else:
-        return "뚜렷한 추세가 관찰되지 않습니다."
-
 # ADF 테스트 함수
 def perform_adf_test(data):
     result = adfuller(data.dropna())
     return f'ADF 통계량: {result[0]:.4f}, p-value: {result[1]:.4f}'
 
-
-# Sidebar
-st.sidebar.header("Stock Parameters")
-available_tickers, tickers_companies_dict = get_sp500_components()
-ticker = st.sidebar.selectbox("Ticker", available_tickers, format_func=tickers_companies_dict.get)
-start_date = st.sidebar.date_input("Start date", datetime.date(2019, 1, 1))
-end_date = st.sidebar.date_input("End date", datetime.date.today())
-
-if start_date > end_date:
-    st.sidebar.error("The end date must fall after the start date")
-
-# Technical Analysis Parameters
-st.sidebar.header("Technical Analysis Parameters")
-volume_flag = st.sidebar.checkbox(label="Add volume")
-sma_flag = st.sidebar.checkbox(label="Add SMA")
-sma_periods = st.sidebar.number_input("SMA Periods", min_value=1, max_value=50, value=20, step=1)
-bb_flag = st.sidebar.checkbox(label="Add Bollinger Bands")
-bb_periods = st.sidebar.number_input("BB Periods", min_value=1, max_value=50, value=20, step=1)
-bb_std = st.sidebar.number_input("# of standard deviations", min_value=1, max_value=4, value=2, step=1)
-rsi_flag = st.sidebar.checkbox(label="Add RSI")
-rsi_periods = st.sidebar.number_input("RSI Periods", min_value=1, max_value=50, value=14, step=1)
-
-# Main body
-st.title("티커 기술적 분석 웹 서비스")
-st.write("""
-### User manual
-- S&P 지수의 구성 요소인 모든 회사를 선택할 수 있습니다.
-- 관심 있는 기간을 선택할 수 있습니다.
-- 선택한 데이터를 CSV 파일로 다운로드할 수 있습니다.
-- 다음 기술적 지표를 플롯에 추가할 수 있습니다: 단순 이동 평균, 볼린저 밴드, 상대 강도 지수
-- 지표의 다양한 매개변수를 실험해 볼 수 있습니다.
-""")
-
-# Load data
-df = load_data(ticker, start_date, end_date)
-
-# Data preview
-data_exp = st.expander("Preview data")
-available_cols = df.columns.tolist()
-columns_to_show = data_exp.multiselect("Columns", available_cols, default=available_cols)
-data_exp.dataframe(df[columns_to_show])
-
-csv_file = convert_df_to_csv(df[columns_to_show])
-data_exp.download_button(
-    label="Download selected as CSV",
-    data=csv_file,
-    file_name=f"{ticker}_stock_prices.csv",
-    mime="text/csv",
-)
-
-# 차트 생성 함수 추가
+# 차트 생성 함수
 def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods):
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
 
-    # Candlestick chart
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
         name='OHLC', increasing_line_color=color_palette['candlestick_increasing'],
@@ -238,7 +162,7 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
 
     return fig
 
-# 시계열 분해 차트 생성 함수 추가
+# 시계열 분해 차트 생성 함수
 def create_decomposition_chart(log_data, diff_data, trend, seasonal, residual):
     fig = make_subplots(rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.05,
                         subplot_titles=("원본 데이터 (로그 스케일)", "차분된 데이터", "추세", "계절성", "잔차"))
@@ -267,6 +191,46 @@ def create_decomposition_chart(log_data, diff_data, trend, seasonal, residual):
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
 
     return fig
+
+# Streamlit 앱 시작
+st.title("티커 기술적 분석 웹 서비스")
+
+# 사이드바
+st.sidebar.header("주식 매개변수")
+available_tickers, tickers_companies_dict = get_sp500_components()
+ticker = st.sidebar.selectbox("티커", available_tickers, format_func=tickers_companies_dict.get)
+start_date = st.sidebar.date_input("시작일", datetime.date(2019, 1, 1))
+end_date = st.sidebar.date_input("종료일", datetime.date.today())
+
+if start_date > end_date:
+    st.sidebar.error("종료일은 시작일 이후여야 합니다.")
+
+st.sidebar.header("기술적 분석 매개변수")
+volume_flag = st.sidebar.checkbox(label="거래량 추가")
+sma_flag = st.sidebar.checkbox(label="SMA 추가")
+sma_periods = st.sidebar.number_input("SMA 기간", min_value=1, max_value=50, value=20, step=1)
+bb_flag = st.sidebar.checkbox(label="볼린저 밴드 추가")
+bb_periods = st.sidebar.number_input("볼린저 밴드 기간", min_value=1, max_value=50, value=20, step=1)
+bb_std = st.sidebar.number_input("표준편차 수", min_value=1, max_value=4, value=2, step=1)
+rsi_flag = st.sidebar.checkbox(label="RSI 추가")
+rsi_periods = st.sidebar.number_input("RSI 기간", min_value=1, max_value=50, value=14, step=1)
+
+# 데이터 로드
+df = load_data(ticker, start_date, end_date)
+
+# 데이터 미리보기
+data_exp = st.expander("데이터 미리보기")
+available_cols = df.columns.tolist()
+columns_to_show = data_exp.multiselect("열", available_cols, default=available_cols)
+data_exp.dataframe(df[columns_to_show])
+
+csv_file = convert_df_to_csv(df[columns_to_show])
+data_exp.download_button(
+    label="선택한 데이터를 CSV로 다운로드",
+    data=csv_file,
+    file_name=f"{ticker}_stock_prices.csv",
+    mime="text/csv",
+)
 
 # 차트 생성
 st.plotly_chart(create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods), use_container_width=True)
@@ -322,3 +286,32 @@ if st.button("시계열 분해 수행"):
         st.subheader("정상성 검정 (ADF 테스트)")
         st.info("원본 데이터: " + perform_adf_test(log_data))
         st.info("차분된 데이터: " + perform_adf_test(diff_data))
+
+# 사용자 매뉴얼
+st.write("""
+## 사용자 매뉴얼
+1. 사이드바에서 분석하고 싶은 S&P 500 주식을 선택하세요.
+2. 분석하고 싶은 기간의 시작일과 종료일을 선택하세요.
+3. 원하는 기술적 지표(거래량, SMA, 볼린저 밴드, RSI)를 선택하고 매개변수를 조정하세요.
+4. 차트를 통해 주가의 움직임과 기술적 지표를 확인하세요.
+5. '시계열 분해 수행' 버튼을 클릭하여 상세한 시계열 분석 결과를 확인하세요.
+6. ARIMA 모델을 통한 향후 30일간의 가격 예측과 추세 분석 결과를 확인하세요.
+7. 계절성, 잔차, 정상성 검정 결과를 통해 주가의 특성을 파악하세요.
+""")
+
+# 추가 정보
+st.write("""
+## 추가 정보
+- 이 앱은 S&P 500 구성 주식에 대한 기술적 분석을 제공합니다.
+- 사용된 데이터는 Yahoo Finance에서 실시간으로 가져오며, 최신 정보를 반영합니다.
+- 시계열 분해는 주가의 추세, 계절성, 잔차 요소를 분리하여 분석합니다.
+- ARIMA 모델은 과거 데이터를 바탕으로 미래 가격을 예측합니다. 단, 이는 참고용이며 실제 투자 결정에는 다양한 요소를 고려해야 합니다.
+- ADF 테스트는 시계열 데이터의 정상성을 검정합니다. p-value가 0.05 미만이면 정상성을 가정할 수 있습니다.
+""")
+
+# 면책조항
+st.write("""
+## 면책조항
+이 앱에서 제공하는 정보는 교육 및 참고 목적으로만 사용되어야 합니다. 실제 투자 결정은 본인의 판단하에 이루어져야 하며, 
+이 앱의 분석 결과로 인한 투자 손실에 대해 개발자는 책임을 지지 않습니다.
+""")
