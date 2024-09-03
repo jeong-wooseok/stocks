@@ -5,6 +5,7 @@ import datetime
 import pandas as pd
 import numpy as np
 from plotly.subplots import make_subplots
+from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.arima.model import ARIMA
 
 # data functions
@@ -43,8 +44,22 @@ def add_rsi(df, period):
     df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
     return df
 
-# 시계열 분해 함수
+# 시계열 분해 함수 수정
 def perform_time_series_decomposition(data):
+    # 결측값 처리
+    data = data.dropna()
+    
+    # 인덱스가 DatetimeIndex인지 확인하고 아니면 변환
+    if not isinstance(data.index, pd.DatetimeIndex):
+        data.index = pd.to_datetime(data.index)
+    
+    # 일별 데이터로 리샘플링 (필요한 경우)
+    data = data.resample('D').mean()
+    
+    # 결측값이 있으면 보간
+    data = data.interpolate()
+    
+    # seasonal_decompose 수행
     decomposition = seasonal_decompose(data, model='additive', period=30)
     
     trend = decomposition.trend
