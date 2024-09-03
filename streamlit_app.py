@@ -1,4 +1,4 @@
-# imports
+import plotly.graph_objects as go
 import yfinance as yf
 import streamlit as st
 import datetime 
