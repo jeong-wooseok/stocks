@@ -43,6 +43,16 @@ def add_rsi(df, period):
     df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
     return df
 
+# 시계열 분해 함수
+def perform_time_series_decomposition(data):
+    decomposition = seasonal_decompose(data, model='additive', period=30)
+    
+    trend = decomposition.trend
+    seasonal = decomposition.seasonal
+    residual = decomposition.resid
+    
+    return trend, seasonal, residual
+
 # ARIMA model function
 def perform_arima_analysis(data):
     model = ARIMA(data, order=(1,1,1))
@@ -139,37 +149,39 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ARIMA analysis section
-st.header("ARIMA 분석")
-if st.button("ARIMA 분석 수행"):
-    with st.spinner("ARIMA 분석 중..."):
-        forecast, summary = perform_arima_analysis(df['Close'])
-        
-        # Model summary
-        st.subheader("ARIMA 모델 요약")
-        st.text(summary)
-        
-        # Forecast and visualization
-        index_of_fc = pd.date_range(df.index[-1] + pd.Timedelta(days=1), periods=30, freq='D')
 
-        # Result visualization
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격'))
-        fig.add_trace(go.Scatter(x=index_of_fc, y=forecast, mode='lines', name='예측', line=dict(color='red')))
+# 시계열 분해 섹션
+st.header("시계열 분해 분석")
+if st.button("시계열 분해 수행"):
+    with st.spinner("시계열 분해 중..."):
+        trend, seasonal, residual = perform_time_series_decomposition(df['Close'])
         
-        fig.update_layout(title='주가와 ARIMA 예측',
-                          xaxis_title='날짜',
-                          yaxis_title='가격',
-                          height=600)
+        # 결과 시각화
+        fig = make_subplots(rows=4, cols=1, shared_xaxes=True, vertical_spacing=0.05,
+                            subplot_titles=("원본 데이터", "추세", "계절성", "잔차"))
         
+        fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='원본 데이터'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=trend.index, y=trend, mode='lines', name='추세'), row=2, col=1)
+        fig.add_trace(go.Scatter(x=seasonal.index, y=seasonal, mode='lines', name='계절성'), row=3, col=1)
+        fig.add_trace(go.Scatter(x=residual.index, y=residual, mode='lines', name='잔차'), row=4, col=1)
+        
+        fig.update_layout(height=900, title_text="시계열 분해 결과")
         st.plotly_chart(fig, use_container_width=True)
         
-        # Trend existence determination
-        trend_diff = np.diff(forecast)
-        trend_direction = np.mean(trend_diff)
-        
-        if abs(trend_direction) > 0.01:  # Threshold setting (can be adjusted as needed)
-            trend_message = "상승" if trend_direction > 0 else "하락"
-            st.success(f"분석 결과, 향후 30일 동안 {trend_message} 트렌드가 예상됩니다.")
+        # 추세 분석
+        overall_trend = trend.iloc[-1] - trend.iloc[0]
+        if overall_trend > 0:
+            st.success(f"분석 결과, 선택한 기간 동안 전반적인 상승 추세가 관찰됩니다. (총 변화: {overall_trend:.2f})")
+        elif overall_trend < 0:
+            st.error(f"분석 결과, 선택한 기간 동안 전반적인 하락 추세가 관찰됩니다. (총 변화: {overall_trend:.2f})")
         else:
-            st.info("분석 결과, 향후 30일 동안 뚜렷한 트렌드가 없을 것으로 예상됩니다.")
+            st.info("분석 결과, 선택한 기간 동안 뚜렷한 추세가 관찰되지 않습니다.")
+        
+        # 계절성 분석
+        max_seasonality = seasonal.max()
+        min_seasonality = seasonal.min()
+        st.info(f"계절성 변동 범위: {min_seasonality:.2f} ~ {max_seasonality:.2f}")
+        
+        # 잔차 분석
+        residual_std = residual.std()
+        st.info(f"잔차의 표준편차: {residual_std:.2f}")
