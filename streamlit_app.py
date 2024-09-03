@@ -65,8 +65,8 @@ color_palette = {
     'residual': '#E53935',
     'forecast': '#FF6F00'
 }
-
-# ARIMA 모델 함수
+# ARIMA 모델 함수 수정 (들여쓰기 수정)
+def perform_arima_analysis(data):
     model = ARIMA(data, order=(1,1,1))
     results = model.fit()
     
