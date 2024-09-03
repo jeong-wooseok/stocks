@@ -7,7 +7,6 @@ import numpy as np
 from plotly.subplots import make_subplots
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.arima.model import ARIMA
-
 # data functions
 @st.cache_data
 def get_sp500_components():
@@ -44,19 +43,53 @@ def add_rsi(df, period):
     df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
     return df
 
-import plotly.graph_objects as go
-import yfinance as yf
-import streamlit as st
-import datetime 
-import pandas as pd
-import numpy as np
-from plotly.subplots import make_subplots
-from statsmodels.tsa.seasonal import seasonal_decompose
-from statsmodels.tsa.stattools import adfuller
+# 차트 색상 팔레트 정의
+color_palette = {
+    'background': '#F0F2F6',
+    'text': '#262730',
+    'grid': '#B0BEC5',
+    'candlestick_increasing': '#26A69A',
+    'candlestick_decreasing': '#EF5350',
+    'volume': '#90CAF9',
+    'sma': '#FB8C00',
+    'bb_upper': '#7E57C2',
+    'bb_middle': '#5E35B1',
+    'bb_lower': '#7E57C2',
+    'rsi': '#F06292',
+    'log_data': '#1E88E5',
+    'diff_data': '#43A047',
+    'trend': '#FFA000',
+    'seasonal': '#5E35B1',
+    'residual': '#E53935',
+    'forecast': '#FF6F00'
+}
 
-# (기존 함수들은 그대로 유지)
+# ARIMA 모델 함수 수정
+def perform_arima_analysis(data):
+    model = ARIMA(data, order=(1,1,1))
+    results = model.fit()
+    
+    # 모델 요약
+    summary = str(results.summary())
+    
+    # 예측
+    forecast = results.forecast(steps=30)
+    
+    # 트렌드 판단
+    last_value = data.iloc[-1]
+    forecast_end = forecast.iloc[-1]
+    percent_change = (forecast_end - last_value) / last_value * 100
+    
+    if percent_change > 5:
+        trend = "상승"
+    elif percent_change < -5:
+        trend = "하락"
+    else:
+        trend = "횡보"
+    
+    return forecast, summary, trend, percent_change
 
-# 수정된 시계열 분해 함수
+# 시계열 분해 함수
 def perform_time_series_decomposition(data):
     # 결측값 처리
     data = data.dropna()
@@ -195,8 +228,8 @@ fig.update_layout(
     height=800
 )
 
-st.plotly_chart(fig, use_container_width=True)
-
+# 차트 생성
+st.plotly_chart(create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods), use_container_width=True)
 
 # 시계열 분해 섹션
 st.header("시계열 분해 분석")
@@ -204,22 +237,35 @@ if st.button("시계열 분해 수행"):
     with st.spinner("시계열 분해 중..."):
         log_data, diff_data, trend, seasonal, residual = perform_time_series_decomposition(df['Close'])
         
-        # 결과 시각화
-        fig = make_subplots(rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.05,
-                            subplot_titles=("원본 데이터 (로그 스케일)", "차분된 데이터", "추세", "계절성", "잔차"))
-        
-        fig.add_trace(go.Scatter(x=log_data.index, y=log_data, mode='lines', name='원본 데이터 (로그)'), row=1, col=1)
-        fig.add_trace(go.Scatter(x=diff_data.index, y=diff_data, mode='lines', name='차분된 데이터'), row=2, col=1)
-        fig.add_trace(go.Scatter(x=trend.index, y=trend, mode='lines', name='추세'), row=3, col=1)
-        fig.add_trace(go.Scatter(x=seasonal.index, y=seasonal, mode='lines', name='계절성'), row=4, col=1)
-        fig.add_trace(go.Scatter(x=residual.index, y=residual, mode='lines', name='잔차'), row=5, col=1)
-        
-        fig.update_layout(height=1200, title_text="시계열 분해 결과")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(create_decomposition_chart(log_data, diff_data, trend, seasonal, residual), use_container_width=True)
         
         # 추세 분석
         st.subheader("추세 분석")
-        st.success(analyze_trend(trend))
+        forecast, summary, arima_trend, percent_change = perform_arima_analysis(df['Close'])
+        
+        if arima_trend == "상승":
+            st.success(f"ARIMA 분석 결과, 향후 30일 동안 상승 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+        elif arima_trend == "하락":
+            st.error(f"ARIMA 분석 결과, 향후 30일 동안 하락 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+        else:
+            st.info(f"ARIMA 분석 결과, 향후 30일 동안 뚜렷한 추세가 없을 것으로 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+        
+        # ARIMA 예측 결과 시각화
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격', line=dict(color=color_palette['log_data'])))
+        fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=31, freq='D')[1:], 
+                                 y=forecast, mode='lines', name='ARIMA 예측', line=dict(color=color_palette['forecast'])))
+        
+        fig.update_layout(title='ARIMA 모델 예측 결과',
+                          xaxis_title='날짜',
+                          yaxis_title='가격',
+                          height=500,
+                          plot_bgcolor=color_palette['background'],
+                          paper_bgcolor=color_palette['background'],
+                          font_color=color_palette['text'],
+                          hovermode='x unified')
+        
+        st.plotly_chart(fig, use_container_width=True)
         
         # 계절성 분석
         st.subheader("계절성 분석")
