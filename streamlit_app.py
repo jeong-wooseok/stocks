@@ -31,8 +31,6 @@ def add_rsi(df, period):
 # 메인 부분
 st.title("티커 기술적 분석 웹 서비스")
 
-# (사이드바 및 데이터 로드 부분은 그대로 유지)
-
 # 차트 생성
 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
 
@@ -68,32 +66,23 @@ fig.update_layout(
 st.plotly_chart(fig, use_container_width=True)
 
 # Auto ARIMA 분석 섹션
-st.header("Auto ARIMA 분석")
-if st.button("Auto ARIMA 분석 수행"):
-    with st.spinner("Auto ARIMA 분석 중..."):
-        model = auto_arima(df['Close'], start_p=1, start_q=1, max_p=3, max_q=3, m=1,
-                           start_P=0, seasonal=False, d=1, D=1, trace=True,
-                           error_action='ignore', suppress_warnings=True, stepwise=True)
+# ARIMA 분석 섹션
+st.header("ARIMA 분석")
+if st.button("ARIMA 분석 수행"):
+    with st.spinner("ARIMA 분석 중..."):
+        forecast, summary = perform_arima_analysis(df['Close'])
         
         # 모델 요약
         st.subheader("ARIMA 모델 요약")
-        st.text(str(model.summary()))
+        st.text(summary)
         
         # 예측 및 시각화
-        n_periods = 30  # 30일 예측
-        fc, confint = model.predict(n_periods=n_periods, return_conf_int=True)
-        index_of_fc = pd.date_range(df.index[-1] + pd.Timedelta(days=1), periods=n_periods, freq='D')
+        index_of_fc = pd.date_range(df.index[-1] + pd.Timedelta(days=1), periods=30, freq='D')
 
         # 결과 시각화
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격'))
-        fig.add_trace(go.Scatter(x=index_of_fc, y=fc, mode='lines', name='예측', line=dict(color='red')))
-        fig.add_trace(go.Scatter(x=index_of_fc.tolist()+index_of_fc.tolist()[::-1], 
-                                 y=confint[:,1].tolist()+confint[:,0].tolist()[::-1],
-                                 fill='toself',
-                                 fillcolor='rgba(255,0,0,0.1)',
-                                 line=dict(color='rgba(255,0,0,0.1)'),
-                                 name='신뢰 구간'))
+        fig.add_trace(go.Scatter(x=index_of_fc, y=forecast, mode='lines', name='예측', line=dict(color='red')))
         
         fig.update_layout(title='주가와 ARIMA 예측',
                           xaxis_title='날짜',
@@ -103,7 +92,7 @@ if st.button("Auto ARIMA 분석 수행"):
         st.plotly_chart(fig, use_container_width=True)
         
         # 트렌드 존재 여부 판단
-        trend_diff = np.diff(fc)
+        trend_diff = np.diff(forecast)
         trend_direction = np.mean(trend_diff)
         
         if abs(trend_direction) > 0.01:  # 임계값 설정 (필요에 따라 조정 가능)
@@ -112,4 +101,3 @@ if st.button("Auto ARIMA 분석 수행"):
         else:
             st.info("분석 결과, 향후 30일 동안 뚜렷한 트렌드가 없을 것으로 예상됩니다.")
 
-# (기존의 코드는 그대로 유지)
