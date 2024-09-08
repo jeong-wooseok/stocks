@@ -68,14 +68,23 @@ color_palette = {
 
 def perform_arima_analysis(data):
     try:
+        # 데이터가 데이터프레임인지 확인
+        if not isinstance(data, pd.DataFrame):
+            return None, "입력된 데이터가 pandas DataFrame이 아닙니다.", None, None
+
+        # 'Close' 열이 있는지 확인
+        if 'Close' not in data.columns:
+            return None, "'Close' 열이 데이터에 존재하지 않습니다.", None, None
+
         # 'Close' 열만 선택
-        close_data = data['Close']
+        close_data = data['Close'].dropna()
         
         # 데이터가 충분한지 확인
         if len(close_data) < 30:
             return None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None
         
-        # 로그 변환 적용
+        # 로그 변환 적용 (0 또는 음수 값 처리)
+        close_data = close_data[close_data > 0]
         log_data = np.log(close_data)
         
         # ARIMA 모델 적합
@@ -108,6 +117,7 @@ def perform_arima_analysis(data):
     except Exception as e:
         st.error(f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}")
         return None, f"오류 발생: {str(e)}", None, None
+
         
 # 시계열 분해 함수
 def perform_time_series_decomposition(data):
