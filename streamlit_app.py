@@ -73,7 +73,12 @@ def add_rsi(df, period):
 def calculate_volatility(returns, window=20):
     return returns.rolling(window=window).std() * np.sqrt(252)
     
-    
+import numpy as np
+import pandas as pd
+from statsmodels.tsa.arima.model import ARIMA
+import streamlit as st
+from itertools import product
+
 def perform_arima_analysis(data):
     try:
         if 'Close' not in data.columns:
@@ -125,6 +130,28 @@ def perform_arima_analysis(data):
         
         # 추세 판단
         percent_change = ((forecast_30.iloc[-1] - last_price) / last_price) * 100
+        
+        if percent_change > 5:
+            trend = "상승"
+        elif percent_change < -5:
+            trend = "하락"
+        else:
+            trend = "횡보"
+        
+        # 예측 결과 유효성 검사
+        if np.isnan(forecast_30).any() or np.isnan(forecast_7).any():
+            raise ValueError("예측 결과에 NaN 값이 포함되어 있습니다.")
+        
+        if abs(percent_change) < 0.01:
+            raise ValueError("예측 변화율이 비정상적으로 작습니다. 모델을 재검토해야 합니다.")
+        
+        return forecast_30, forecast_7, summary, trend, percent_change, current_volatility
+    
+    except Exception as e:
+        error_msg = f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}"
+        st.error(error_msg)
+        return None, None, error_msg, None, None, None
+
 
 # 시계열 분해
 def perform_time_series_decomposition(data):
