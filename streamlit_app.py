@@ -176,13 +176,13 @@ def perform_adf_test(data):
     result = adfuller(data.dropna())
     return f'ADF 통계량: {result[0]:.4f}, p-value: {result[1]:.4f}'
 
-# 차트 생성
+
 def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods, ticker, tickers_companies_dict):
-    # 서브플롯 개수 결정
+    # 서브플롯 개수 결정 (주가는 항상 포함)
     subplot_count = 1 + volume_flag + rsi_flag
-    row_heights = [0.6] + [0.2] * (subplot_count - 1)
+    row_heights = [0.5] + [0.25] * (subplot_count - 1)
     
-    fig = make_subplots(rows=subplot_count, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=row_heights)
+    fig = make_subplots(rows=subplot_count, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=row_heights)
 
     # 메인 캔들스틱 차트
     fig.add_trace(go.Candlestick(
@@ -225,7 +225,7 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
 
     fig.update_layout(
         title=f"{tickers_companies_dict[ticker]}'s stock price",
-        height=200 * subplot_count,
+        height=300 * subplot_count,  # 각 서브플롯의 높이를 300px로 설정
         plot_bgcolor=color_palette['background'],
         paper_bgcolor=color_palette['background'],
         font_color=color_palette['text'],
@@ -236,7 +236,7 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
 
-    # 각 서브플롯에 대해 y축 범위 설정
+    # 각 서브플롯에 대해 y축 범위 및 제목 설정
     fig.update_yaxes(title_text="Price", row=1, col=1)
     fig.update_yaxes(range=[df['Low'].min()*0.95, df['High'].max()*1.05], row=1, col=1)
     
@@ -247,6 +247,7 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
         fig.update_yaxes(range=[0, 100], row=subplot_count, col=1)
 
     return fig
+
 
 # 시계열 분해 차트
 def create_decomposition_chart(log_data, diff_data, trend, seasonal, residual):
