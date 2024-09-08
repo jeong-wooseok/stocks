@@ -72,7 +72,8 @@ def add_rsi(df, period):
 
 def calculate_volatility(returns, window=20):
     return returns.rolling(window=window).std() * np.sqrt(252)
-
+    
+    
 def perform_arima_analysis(data):
     try:
         if 'Close' not in data.columns:
@@ -84,19 +85,20 @@ def perform_arima_analysis(data):
             return None, None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None, None
         
         # 로그 수익률 계산
-        log_returns = np.log(close_data / close_data.shift(1)).dropna()
+        log_returns = np.log(close_data / close_data.shift(1)).dropna().values.flatten()  # 1차원 배열로 변환
         
         # 그리드 서치를 통한 최적 파라미터 찾기
         best_aic = np.inf
         best_order = None
-        for p, d, q in product(range(0, 5), [1], range(0, 5)):
+        for p, d, q in product(range(0, 3), [1], range(0, 3)):
             try:
                 model = ARIMA(log_returns, order=(p, d, q))
                 results = model.fit()
                 if results.aic < best_aic:
                     best_aic = results.aic
                     best_order = (p, d, q)
-            except:
+            except Exception as e:
+                st.write(f"파라미터 (p,d,q)=({p},{d},{q}) 시도 중 오류 발생: {str(e)}")
                 continue
         
         if best_order is None:
@@ -113,38 +115,17 @@ def perform_arima_analysis(data):
         
         # 예측된 로그 수익률을 가격으로 변환
         last_price = close_data.iloc[-1]
-        forecast_prices = last_price * np.exp(forecast_returns.cumsum())
+        forecast_prices = last_price * np.exp(np.cumsum(forecast_returns))
         forecast_30 = pd.Series(forecast_prices, index=pd.date_range(start=close_data.index[-1] + pd.Timedelta(days=1), periods=30))
         forecast_7 = forecast_30[:7]
         
         # 변동성 계산
-        volatility = log_returns.rolling(window=20).std() * np.sqrt(252)
+        volatility = pd.Series(log_returns).rolling(window=20).std() * np.sqrt(252)
         current_volatility = volatility.iloc[-1]
         
         # 추세 판단
         percent_change = ((forecast_30.iloc[-1] - last_price) / last_price) * 100
-        
-        if percent_change > 5:
-            trend = "상승"
-        elif percent_change < -5:
-            trend = "하락"
-        else:
-            trend = "횡보"
-        
-        # 예측 결과 유효성 검사
-        if np.isnan(forecast_30).any() or np.isnan(forecast_7).any():
-            raise ValueError("예측 결과에 NaN 값이 포함되어 있습니다.")
-        
-        if abs(percent_change) < 0.01:
-            raise ValueError("예측 변화율이 비정상적으로 작습니다. 모델을 재검토해야 합니다.")
-        
-        return forecast_30, forecast_7, summary, trend, percent_change, current_volatility
-    
-    except Exception as e:
-        error_msg = f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}"
-        st.error(error_msg)
-        return None, None, error_msg, None, None, None
-    
+
 # 시계열 분해
 def perform_time_series_decomposition(data):
     data = data.dropna()
