@@ -317,35 +317,6 @@ if st.button("시계열 분해 수행"):
         
         st.plotly_chart(create_decomposition_chart(log_data, diff_data, trend, seasonal, residual), use_container_width=True)
         
-        # 추세 분석
-        st.subheader("추세 분석")
-        forecast, summary, arima_trend, percent_change = perform_arima_analysis(df['Close'])
-        
-        if forecast is not None:
-            if arima_trend == "상승":
-                st.success(f"ARIMA 분석 결과, 향후 30일 동안 상승 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
-            elif arima_trend == "하락":
-                st.error(f"ARIMA 분석 결과, 향후 30일 동안 하락 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
-            else:
-                st.info(f"ARIMA 분석 결과, 향후 30일 동안 뚜렷한 추세가 없을 것으로 예상됩니다. (예상 변화: {percent_change:.2f}%)")
-            
-            # ARIMA 예측 결과 시각화
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격', line=dict(color=color_palette['log_data'])))
-            fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=31, freq='D')[1:], 
-                                     y=forecast, mode='lines', name='ARIMA 예측', line=dict(color=color_palette['forecast'])))
-            
-            fig.update_layout(title='ARIMA 모델 예측 결과',
-                              xaxis_title='날짜',
-                              yaxis_title='가격',
-                              height=500,
-                              plot_bgcolor=color_palette['background'],
-                              paper_bgcolor=color_palette['background'],
-                              font_color=color_palette['text'],
-                              hovermode='x unified')
-            
-            st.plotly_chart(fig, use_container_width=True)
-        
         # 계절성 분석
         st.subheader("계절성 분석")
         max_seasonality = seasonal.max()
