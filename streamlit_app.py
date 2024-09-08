@@ -265,4 +265,94 @@ def main():
             forecast_30, forecast_7, summary, arima_trend, percent_change = perform_arima_analysis(df)
             if forecast_30 is not None and forecast_7 is not None:
                 if arima_trend == "상승":
-                    st.success(f"ARIMA 분석 결과, 향후 30일 동안 상승 추세가 예상됩니다. (예상 변화: {percent
+                    st.success(f"ARIMA 분석 결과, 향후 30일 동안 상승 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+                elif arima_trend == "하락":
+                    st.error(f"ARIMA 분석 결과, 향후 30일 동안 하락 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+                else:
+                    st.info(f"ARIMA 분석 결과, 향후 30일 동안 뚜렷한 추세가 없을 것으로 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+                
+                # ARIMA 예측 결과 시각화
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격', line=dict(color=color_palette['log_data'])))
+                fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=31, freq='D')[1:], 
+                                         y=forecast_30, mode='lines', name='30일 예측', line=dict(color=color_palette['forecast'])))
+                fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=8, freq='D')[1:], 
+                                         y=forecast_7, mode='lines', name='7일 예측', line=dict(color='green')))
+                
+                fig.update_layout(title='ARIMA 모델 예측 결과',
+                                  xaxis_title='날짜',
+                                  yaxis_title='가격',
+                                  height=500,
+                                  plot_bgcolor=color_palette['background'],
+                                  paper_bgcolor=color_palette['background'],
+                                  font_color=color_palette['text'],
+                                  hovermode='x unified')
+                
+                st.plotly_chart(fig, use_container_width=True)
+
+                # 7일 예측 결과를 표 형태로 표시
+                st.subheader("향후 7일간 예측 가격")
+                forecast_df = pd.DataFrame({
+                    '날짜': pd.date_range(start=df.index[-1], periods=8, freq='D')[1:],
+                    '예측 가격': forecast_7.round(2)
+                })
+                st.table(forecast_df)
+
+            else:
+                st.warning(f"ARIMA 분석을 수행할 수 없습니다. 이유: {summary}")
+
+    # 시계열 분해 섹션
+    st.header("시계열 분해 분석")
+    if st.button("시계열 분해 수행"):
+        with st.spinner("시계열 분해 중..."):
+            log_data, diff_data, trend, seasonal, residual = perform_time_series_decomposition(df['Close'])
+            
+            st.plotly_chart(create_decomposition_chart(log_data, diff_data, trend, seasonal, residual), use_container_width=True)
+            
+            # 계절성 분석
+            st.subheader("계절성 분석")
+            max_seasonality = seasonal.max()
+            min_seasonality = seasonal.min()
+            st.info(f"계절성 변동 범위: {np.exp(min_seasonality) - 1:.2%} ~ {np.exp(max_seasonality) - 1:.2%}")
+            
+            # 잔차 분석
+            st.subheader("잔차 분석")
+            residual_std = residual.std()
+            st.info(f"잔차의 표준편차: {residual_std:.4f}")
+            
+            # 정상성 검정
+            st.subheader("정상성 검정 (ADF 테스트)")
+            st.info("원본 데이터: " + perform_adf_test(log_data))
+            st.info("차분된 데이터: " + perform_adf_test(diff_data))
+
+    # 사용자 매뉴얼
+    st.write("""
+    ## 사용자 매뉴얼
+    1. 사이드바에서 분석하고 싶은 S&P 500 주식을 선택하세요.
+    2. 분석하고 싶은 기간의 시작일과 종료일을 선택하세요.
+    3. 원하는 기술적 지표(거래량, SMA, 볼린저 밴드, RSI)를 선택하고 매개변수를 조정하세요.
+    4. 차트를 통해 주가의 움직임과 기술적 지표를 확인하세요.
+    5. 'ARIMA 분석 수행' 버튼을 클릭하여 향후 30일간의 가격 예측과 추세 분석 결과를 확인하세요.
+    6. '시계열 분해 수행' 버튼을 클릭하여 상세한 시계열 분석 결과를 확인하세요.
+    7. 계절성, 잔차, 정상성 검정 결과를 통해 주가의 특성을 파악하세요.
+    """)
+
+    # 추가 정보
+    st.write("""
+    ## 추가 정보
+    - 이 앱은 S&P 500 구성 주식에 대한 기술적 분석을 제공합니다.
+    - 사용된 데이터는 Yahoo Finance에서 실시간으로 가져오며, 최신 정보를 반영합니다.
+    - 시계열 분해는 주가의 추세, 계절성, 잔차 요소를 분리하여 분석합니다.
+    - ARIMA 모델은 과거 데이터를 바탕으로 미래 가격을 예측합니다. 단, 이는 참고용이며 실제 투자 결정에는 다양한 요소를 고려해야 합니다.
+    - ADF 테스트는 시계열 데이터의 정상성을 검정합니다. p-value가 0.05 미만이면 정상성을 가정할 수 있습니다.
+    """)
+
+    # 면책조항
+    st.write("""
+    ## 면책조항
+    이 앱에서 제공하는 정보는 교육 및 참고 목적으로만 사용되어야 합니다. 실제 투자 결정은 본인의 판단하에 이루어져야 하며, 
+    이 앱의 분석 결과로 인한 투자 손실에 대해 개발자는 책임을 지지 않습니다.
+    """)
+
+if __name__ == "__main__":
+    main()
