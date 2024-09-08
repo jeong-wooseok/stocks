@@ -11,6 +11,7 @@ from statsmodels.tsa.stattools import adfuller
 import numpy as np
 from statsmodels.tsa.arima.model import ARIMA
 from arch import arch_model
+from pmdarima import auto_arima
 
 # 차트 색상 팔레트
 color_palette = {
@@ -74,6 +75,7 @@ def calculate_volatility(returns, window=20):
 
 # ARIMA 분석
 
+
 def perform_arima_analysis(data):
     try:
         if 'Close' not in data.columns:
@@ -87,8 +89,14 @@ def perform_arima_analysis(data):
         # 로그 변환
         log_data = np.log(close_data)
         
-        # ARIMA 모델 적합 (파라미터 조정)
-        model = ARIMA(log_data, order=(5,1,0))  # p=5, d=1, q=0으로 변경
+        # auto_arima를 사용하여 최적의 파라미터 찾기
+        auto_model = auto_arima(log_data, start_p=1, start_q=1, max_p=5, max_q=5, m=1, d=None, trace=False,
+                                error_action='ignore', suppress_warnings=True, stepwise=True)
+        
+        best_order = auto_model.order
+        
+        # 최적의 파라미터로 ARIMA 모델 적합
+        model = ARIMA(log_data, order=best_order)
         results = model.fit()
         
         summary = str(results.summary())
@@ -101,6 +109,10 @@ def perform_arima_analysis(data):
         last_price = close_data.iloc[-1]
         forecast_30 = pd.Series(np.exp(forecast_log), index=pd.date_range(start=close_data.index[-1] + pd.Timedelta(days=1), periods=30))
         forecast_7 = pd.Series(np.exp(forecast_log_7), index=pd.date_range(start=close_data.index[-1] + pd.Timedelta(days=1), periods=7))
+        
+        # NaN 값 처리
+        forecast_30 = forecast_30.fillna(method='ffill').fillna(last_price)
+        forecast_7 = forecast_7.fillna(method='ffill').fillna(last_price)
         
         # 변동성 계산
         returns = close_data.pct_change().dropna()
@@ -117,16 +129,13 @@ def perform_arima_analysis(data):
         else:
             trend = "횡보"
         
-        # 예측 결과 유효성 검사
-        if np.isnan(forecast_30).any() or np.isnan(forecast_7).any():
-            raise ValueError("예측 결과에 NaN 값이 포함되어 있습니다.")
-        
         return forecast_30, forecast_7, summary, trend, percent_change, current_volatility
     
     except Exception as e:
         error_msg = f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}"
         st.error(error_msg)
         return None, None, error_msg, None, None, None
+
         
 # 시계열 분해
 def perform_time_series_decomposition(data):
