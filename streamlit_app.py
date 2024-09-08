@@ -68,42 +68,35 @@ color_palette = {
 
 def perform_arima_analysis(data):
     try:
-        # 데이터가 데이터프레임인지 확인
         if not isinstance(data, pd.DataFrame):
-            return None, "입력된 데이터가 pandas DataFrame이 아닙니다.", None, None
+            return None, "입력된 데이터가 pandas DataFrame이 아닙니다.", None, None, None
 
-        # 'Close' 열이 있는지 확인
         if 'Close' not in data.columns:
-            return None, "'Close' 열이 데이터에 존재하지 않습니다.", None, None
+            return None, "'Close' 열이 데이터에 존재하지 않습니다.", None, None, None
 
-        # 'Close' 열만 선택
         close_data = data['Close'].dropna()
         
-        # 데이터가 충분한지 확인
         if len(close_data) < 30:
-            return None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None
+            return None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None, None
         
-        # 로그 변환 적용 (0 또는 음수 값 처리)
         close_data = close_data[close_data > 0]
         log_data = np.log(close_data)
         
-        # ARIMA 모델 적합
         model = ARIMA(log_data, order=(1,1,1))
         results = model.fit()
         
-        # 모델 요약
         summary = str(results.summary())
         
-        # 예측 (로그 스케일)
-        forecast_log = results.forecast(steps=30)
+        forecast_log_30 = results.forecast(steps=30)
+        forecast_30 = np.exp(forecast_log_30)
         
-        # 로그 스케일에서 원래 스케일로 변환
-        forecast = np.exp(forecast_log)
+        forecast_log_7 = results.forecast(steps=7)
+        forecast_7 = np.exp(forecast_log_7)
         
         last_value = close_data.iloc[-1]
-        forecast_end = forecast.iloc[-1]
+        forecast_end_30 = forecast_30.iloc[-1]
         
-        percent_change = ((forecast_end - last_value) / last_value) * 100
+        percent_change = ((forecast_end_30 - last_value) / last_value) * 100
         
         if percent_change > 5:
             trend = "상승"
@@ -112,12 +105,53 @@ def perform_arima_analysis(data):
         else:
             trend = "횡보"
         
-        return forecast, summary, trend, percent_change
+        return forecast_30, forecast_7, summary, trend, percent_change
     
     except Exception as e:
         st.error(f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}")
-        return None, f"오류 발생: {str(e)}", None, None
+        return None, None, f"오류 발생: {str(e)}", None, None
 
+# ARIMA 분석 결과를 표시하는 부분
+st.subheader("ARIMA 모델을 이용한 주가 예측")
+forecast_30, forecast_7, summary, arima_trend, percent_change = perform_arima_analysis(df)
+
+if forecast_30 is not None and forecast_7 is not None:
+    if arima_trend == "상승":
+        st.success(f"ARIMA 분석 결과, 향후 30일 동안 상승 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+    elif arima_trend == "하락":
+        st.error(f"ARIMA 분석 결과, 향후 30일 동안 하락 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+    else:
+        st.info(f"ARIMA 분석 결과, 향후 30일 동안 뚜렷한 추세가 없을 것으로 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+    
+    # ARIMA 예측 결과 시각화
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격', line=dict(color=color_palette['log_data'])))
+    fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=31, freq='D')[1:], 
+                             y=forecast_30, mode='lines', name='30일 예측', line=dict(color=color_palette['forecast'])))
+    fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=8, freq='D')[1:], 
+                             y=forecast_7, mode='lines', name='7일 예측', line=dict(color='green')))
+    
+    fig.update_layout(title='ARIMA 모델 예측 결과',
+                      xaxis_title='날짜',
+                      yaxis_title='가격',
+                      height=500,
+                      plot_bgcolor=color_palette['background'],
+                      paper_bgcolor=color_palette['background'],
+                      font_color=color_palette['text'],
+                      hovermode='x unified')
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 7일 예측 결과를 표 형태로 표시
+    st.subheader("향후 7일간 예측 가격")
+    forecast_df = pd.DataFrame({
+        '날짜': pd.date_range(start=df.index[-1], periods=8, freq='D')[1:],
+        '예측 가격': forecast_7.round(2)
+    })
+    st.table(forecast_df)
+
+else:
+    st.warning(f"ARIMA 분석을 수행할 수 없습니다. 이유: {summary}")
         
 # 시계열 분해 함수
 def perform_time_series_decomposition(data):
