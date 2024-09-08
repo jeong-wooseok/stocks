@@ -8,6 +8,9 @@ from plotly.subplots import make_subplots
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import adfuller
+import numpy as np
+from statsmodels.tsa.arima.model import ARIMA
+from arch import arch_model
 
 # 차트 색상 팔레트
 color_palette = {
@@ -66,49 +69,64 @@ def add_rsi(df, period):
     df[f'RSI_{period}'] = 100 - (100 / (1 + rs))
     return df
 
-# ARIMA 분석
+def calculate_volatility(returns, window=20):
+    return returns.rolling(window=window).std() * np.sqrt(252)
+
 def perform_arima_analysis(data):
     try:
         if 'Close' not in data.columns:
-            return None, None, "'Close' 열이 데이터에 없습니다.", None, None
+            return None, None, "'Close' 열이 데이터에 없습니다.", None, None, None
         
         close_data = data['Close'].dropna()
         
         if len(close_data) < 30:
-            return None, None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None
+            return None, None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None, None
         
-        log_data = np.log(close_data)
+        log_returns = np.log(close_data / close_data.shift(1)).dropna()
         
-        # ARIMA 모델의 하이퍼파라미터 조정
-        model = ARIMA(log_data, order=(2,1,2))  # p=2, d=1, q=2로 변경
+        # ARIMA 모델 파라미터 조정
+        model = ARIMA(log_returns, order=(3,1,3))  # p=3, d=1, q=3로 변경
         results = model.fit()
         
         summary = str(results.summary())
         
-        forecast_log_30 = results.forecast(steps=30)
-        forecast_log_7 = forecast_log_30[:7]
+        forecast_log_returns = results.forecast(steps=30)
+        forecast_log_7 = forecast_log_returns[:7]
         
-        forecast_30 = np.exp(forecast_log_30)
-        forecast_7 = np.exp(forecast_log_7)
+        # 수익률을 가격으로 변환
+        last_price = close_data.iloc[-1]
+        forecast_30 = last_price * np.exp(forecast_log_returns.cumsum())
+        forecast_7 = last_price * np.exp(forecast_log_7.cumsum())
         
-        last_value = close_data.iloc[-1]
-        forecast_end = forecast_30.iloc[-1]
+        # 변동성 계산
+        volatility = calculate_volatility(log_returns)
+        current_volatility = volatility.iloc[-1]
         
-        percent_change = ((forecast_end - last_value) / last_value) * 100
+        # GARCH 모델을 사용한 변동성 예측
+        garch_model = arch_model(log_returns, vol='GARCH', p=1, q=1)
+        garch_results = garch_model.fit(disp='off')
+        garch_forecast = garch_results.forecast(horizon=30)
+        future_volatility = garch_forecast.variance.iloc[-1].mean() ** 0.5 * np.sqrt(252)
         
-        if percent_change > 5:
-            trend = "상승"
-        elif percent_change < -5:
-            trend = "하락"
+        # 추세 판단 로직 개선
+        percent_change = ((forecast_30.iloc[-1] - last_price) / last_price) * 100
+        volatility_ratio = future_volatility / current_volatility
+        
+        if abs(percent_change) > 10 and volatility_ratio > 1.2:
+            trend = "강한 " + ("상승" if percent_change > 0 else "하락")
+        elif abs(percent_change) > 5:
+            trend = "약한 " + ("상승" if percent_change > 0 else "하락")
+        elif volatility_ratio > 1.5:
+            trend = "높은 변동성 예상"
         else:
             trend = "횡보"
         
-        return forecast_30, forecast_7, summary, trend, percent_change
+        return forecast_30, forecast_7, summary, trend, percent_change, current_volatility
     
     except Exception as e:
         error_msg = f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}"
         st.error(error_msg)
-        return None, None, error_msg, None, None
+        return None, None, error_msg, None, None, None
 
 # 시계열 분해
 def perform_time_series_decomposition(data):
@@ -137,6 +155,7 @@ def perform_adf_test(data):
 def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods, ticker, tickers_companies_dict):
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
 
+    # 메인 캔들스틱 차트
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
         name='OHLC', increasing_line_color=color_palette['candlestick_increasing'],
@@ -157,10 +176,12 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
         fig.add_trace(go.Scatter(x=df.index, y=df[f'BB_lower_{bb_periods}'], name=f'BB Lower', 
                                  line=dict(color=color_palette['bb_lower'], width=1)), row=1, col=1)
 
+    # 거래량 차트
     if volume_flag:
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', 
                              marker_color=color_palette['volume']), row=2, col=1)
 
+    # RSI 차트
     if rsi_flag:
         df = add_rsi(df, rsi_periods)
         fig.add_trace(go.Scatter(x=df.index, y=df[f'RSI_{rsi_periods}'], name=f'RSI {rsi_periods}', 
@@ -185,6 +206,11 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
     fig.update_yaxes(title_text="Price", row=1, col=1)
     fig.update_yaxes(title_text="Volume", row=2, col=1)
     fig.update_yaxes(title_text="RSI", row=3, col=1)
+
+    # 각 서브플롯에 대해 y축 범위 설정
+    fig.update_yaxes(range=[df['Low'].min()*0.95, df['High'].max()*1.05], row=1, col=1)
+    fig.update_yaxes(range=[0, df['Volume'].max()*1.1], row=2, col=1)
+    fig.update_yaxes(range=[0, 100], row=3, col=1)
 
     return fig
 
