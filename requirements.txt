@@ -9,3 +9,4 @@ pyarrow
 statsmodels
 scikit-learn
 arch
+pmdarima
