@@ -72,7 +72,8 @@ def add_rsi(df, period):
 def calculate_volatility(returns, window=20):
     return returns.rolling(window=window).std() * np.sqrt(252)
 
-# ARIMA 분석 함수 수정
+# ARIMA 분석
+
 def perform_arima_analysis(data):
     try:
         if 'Close' not in data.columns:
@@ -86,8 +87,8 @@ def perform_arima_analysis(data):
         # 로그 변환
         log_data = np.log(close_data)
         
-        # ARIMA 모델 적합
-        model = ARIMA(log_data, order=(1,1,1))
+        # ARIMA 모델 적합 (파라미터 조정)
+        model = ARIMA(log_data, order=(5,1,0))  # p=5, d=1, q=0으로 변경
         results = model.fit()
         
         summary = str(results.summary())
@@ -103,7 +104,7 @@ def perform_arima_analysis(data):
         
         # 변동성 계산
         returns = close_data.pct_change().dropna()
-        volatility = calculate_volatility(returns)
+        volatility = returns.rolling(window=20).std() * np.sqrt(252)
         current_volatility = volatility.iloc[-1]
         
         # 추세 판단
@@ -116,13 +117,17 @@ def perform_arima_analysis(data):
         else:
             trend = "횡보"
         
+        # 예측 결과 유효성 검사
+        if np.isnan(forecast_30).any() or np.isnan(forecast_7).any():
+            raise ValueError("예측 결과에 NaN 값이 포함되어 있습니다.")
+        
         return forecast_30, forecast_7, summary, trend, percent_change, current_volatility
     
     except Exception as e:
         error_msg = f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}"
         st.error(error_msg)
         return None, None, error_msg, None, None, None
-
+        
 # 시계열 분해
 def perform_time_series_decomposition(data):
     data = data.dropna()
@@ -308,7 +313,7 @@ def main():
     # 차트 생성
     st.plotly_chart(create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods, ticker, tickers_companies_dict), use_container_width=True)
 
-    # ARIMA 분석
+    # main 함수 내 ARIMA 분석 부분
     st.header("ARIMA 모델을 이용한 주가 예측")
     if st.button("ARIMA 분석 수행"):
         with st.spinner("ARIMA 분석 중..."):
@@ -338,13 +343,13 @@ def main():
                 # 7일 예측 결과를 표 형태로 표시
                 st.subheader("향후 7일간 예측 가격")
                 forecast_df = pd.DataFrame({
-                    '날짜': pd.date_range(start=df.index[-1], periods=8, freq='D')[1:],
-                    '예측 가격': forecast_7.round(2)
+                    '날짜': forecast_7.index,
+                    '예측 가격': forecast_7.values.round(2)
                 })
                 st.table(forecast_df)
-
             else:
                 st.warning(f"ARIMA 분석을 수행할 수 없습니다. 이유: {summary}")
+    
 
     # 시계열 분해 섹션
     st.header("시계열 분해 분석")
