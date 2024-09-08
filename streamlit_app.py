@@ -72,6 +72,7 @@ def add_rsi(df, period):
 def calculate_volatility(returns, window=20):
     return returns.rolling(window=window).std() * np.sqrt(252)
 
+# ARIMA 분석 함수 수정
 def perform_arima_analysis(data):
     try:
         if 'Close' not in data.columns:
@@ -97,8 +98,8 @@ def perform_arima_analysis(data):
         
         # 원래 스케일로 변환
         last_price = close_data.iloc[-1]
-        forecast_30 = np.exp(forecast_log)
-        forecast_7 = np.exp(forecast_log_7)
+        forecast_30 = pd.Series(np.exp(forecast_log), index=pd.date_range(start=close_data.index[-1] + pd.Timedelta(days=1), periods=30))
+        forecast_7 = pd.Series(np.exp(forecast_log_7), index=pd.date_range(start=close_data.index[-1] + pd.Timedelta(days=1), periods=7))
         
         # 변동성 계산
         returns = close_data.pct_change().dropna()
@@ -217,7 +218,6 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
 
     return fig
 
-
 # 시계열 분해 차트
 def create_decomposition_chart(log_data, diff_data, trend, seasonal, residual):
     fig = make_subplots(rows=5, cols=1, shared_xaxes=True, vertical_spacing=0.05,
@@ -308,27 +308,21 @@ def main():
     # 차트 생성
     st.plotly_chart(create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods, ticker, tickers_companies_dict), use_container_width=True)
 
-
     # ARIMA 분석
     st.header("ARIMA 모델을 이용한 주가 예측")
     if st.button("ARIMA 분석 수행"):
         with st.spinner("ARIMA 분석 중..."):
-            forecast_30, forecast_7, summary, arima_trend, percent_change = perform_arima_analysis(df)
+            forecast_30, forecast_7, summary, arima_trend, percent_change, current_volatility = perform_arima_analysis(df)
             if forecast_30 is not None and forecast_7 is not None:
-                if arima_trend == "상승":
-                    st.success(f"ARIMA 분석 결과, 향후 30일 동안 상승 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
-                elif arima_trend == "하락":
-                    st.error(f"ARIMA 분석 결과, 향후 30일 동안 하락 추세가 예상됩니다. (예상 변화: {percent_change:.2f}%)")
-                else:
-                    st.info(f"ARIMA 분석 결과, 향후 30일 동안 뚜렷한 추세가 없을 것으로 예상됩니다. (예상 변화: {percent_change:.2f}%)")
+                st.subheader(f"ARIMA 분석 결과: {arima_trend}")
+                st.info(f"향후 30일 동안의 예상 변화율: {percent_change:.2f}%")
+                st.info(f"현재 연간 변동성: {current_volatility*100:.2f}%")
                 
                 # ARIMA 예측 결과 시각화
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name='실제 가격', line=dict(color=color_palette['log_data'])))
-                fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=31, freq='D')[1:], 
-                                         y=forecast_30, mode='lines', name='30일 예측', line=dict(color=color_palette['forecast'])))
-                fig.add_trace(go.Scatter(x=pd.date_range(start=df.index[-1], periods=8, freq='D')[1:], 
-                                         y=forecast_7, mode='lines', name='7일 예측', line=dict(color='green')))
+                fig.add_trace(go.Scatter(x=forecast_30.index, y=forecast_30, mode='lines', name='30일 예측', line=dict(color=color_palette['forecast'])))
+                fig.add_trace(go.Scatter(x=forecast_7.index, y=forecast_7, mode='lines', name='7일 예측', line=dict(color='green')))
                 
                 fig.update_layout(title='ARIMA 모델 예측 결과',
                                   xaxis_title='날짜',
