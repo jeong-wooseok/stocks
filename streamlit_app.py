@@ -65,18 +65,33 @@ color_palette = {
     'residual': '#E53935',
     'forecast': '#FF6F00'
 }
+
 def perform_arima_analysis(data):
     try:
-        model = ARIMA(data, order=(1,1,1))
+        # 'Close' 열만 선택
+        close_data = data['Close']
+        
+        # 데이터가 충분한지 확인
+        if len(close_data) < 30:
+            return None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None
+        
+        # 로그 변환 적용
+        log_data = np.log(close_data)
+        
+        # ARIMA 모델 적합
+        model = ARIMA(log_data, order=(1,1,1))
         results = model.fit()
         
         # 모델 요약
         summary = str(results.summary())
         
-        # 예측
-        forecast = results.forecast(steps=30)
+        # 예측 (로그 스케일)
+        forecast_log = results.forecast(steps=30)
         
-        last_value = data.iloc[-1]
+        # 로그 스케일에서 원래 스케일로 변환
+        forecast = np.exp(forecast_log)
+        
+        last_value = close_data.iloc[-1]
         forecast_end = forecast.iloc[-1]
         
         percent_change = ((forecast_end - last_value) / last_value) * 100
@@ -92,7 +107,7 @@ def perform_arima_analysis(data):
     
     except Exception as e:
         st.error(f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}")
-        return None, None, None, None
+        return None, f"오류 발생: {str(e)}", None, None
         
 # 시계열 분해 함수
 def perform_time_series_decomposition(data):
