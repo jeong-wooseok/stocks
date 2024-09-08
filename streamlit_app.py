@@ -133,7 +133,7 @@ def perform_adf_test(data):
     return f'ADF 통계량: {result[0]:.4f}, p-value: {result[1]:.4f}'
 
 # 차트 생성
-def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods):
+def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods, ticker, tickers_companies_dict):
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
 
     fig.add_trace(go.Candlestick(
@@ -256,7 +256,7 @@ def main():
     )
 
     # 차트 생성
-    st.plotly_chart(create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods), use_container_width=True)
+    st.plotly_chart(create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods, ticker, tickers_companies_dict), use_container_width=True)
 
     # ARIMA 분석
     st.header("ARIMA 모델을 이용한 주가 예측")
