@@ -68,35 +68,41 @@ color_palette = {
 
 def perform_arima_analysis(data):
     try:
-        if not isinstance(data, pd.DataFrame):
-            return None, "입력된 데이터가 pandas DataFrame이 아닙니다.", None, None, None
-
+        # 'Close' 열이 있는지 확인
         if 'Close' not in data.columns:
-            return None, "'Close' 열이 데이터에 존재하지 않습니다.", None, None, None
-
+            return None, None, "'Close' 열이 데이터에 없습니다.", None, None
+        
+        # 'Close' 열만 선택하고 NaN 값 제거
         close_data = data['Close'].dropna()
         
+        # 데이터가 충분한지 확인
         if len(close_data) < 30:
-            return None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None, None
+            return None, None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None
         
-        close_data = close_data[close_data > 0]
+        # 로그 변환 적용
         log_data = np.log(close_data)
         
+        # ARIMA 모델 적합
         model = ARIMA(log_data, order=(1,1,1))
         results = model.fit()
         
+        # 모델 요약
         summary = str(results.summary())
         
+        # 30일 예측 (로그 스케일)
         forecast_log_30 = results.forecast(steps=30)
-        forecast_30 = np.exp(forecast_log_30)
         
-        forecast_log_7 = results.forecast(steps=7)
+        # 7일 예측 (로그 스케일)
+        forecast_log_7 = forecast_log_30[:7]
+        
+        # 로그 스케일에서 원래 스케일로 변환
+        forecast_30 = np.exp(forecast_log_30)
         forecast_7 = np.exp(forecast_log_7)
         
         last_value = close_data.iloc[-1]
-        forecast_end_30 = forecast_30.iloc[-1]
+        forecast_end = forecast_30.iloc[-1]
         
-        percent_change = ((forecast_end_30 - last_value) / last_value) * 100
+        percent_change = ((forecast_end - last_value) / last_value) * 100
         
         if percent_change > 5:
             trend = "상승"
@@ -108,8 +114,10 @@ def perform_arima_analysis(data):
         return forecast_30, forecast_7, summary, trend, percent_change
     
     except Exception as e:
-        st.error(f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}")
-        return None, None, f"오류 발생: {str(e)}", None, None
+        error_msg = f"ARIMA 분석 중 오류가 발생했습니다: {str(e)}"
+        st.error(error_msg)
+        return None, None, error_msg, None, None
+
 
 # ARIMA 분석 결과를 표시하는 부분
 st.subheader("ARIMA 모델을 이용한 주가 예측")
