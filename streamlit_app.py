@@ -79,7 +79,8 @@ def perform_arima_analysis(data):
         
         log_data = np.log(close_data)
         
-        model = ARIMA(log_data, order=(1,1,1))
+        # ARIMA 모델의 하이퍼파라미터 조정
+        model = ARIMA(log_data, order=(2,1,2))  # p=2, d=1, q=2로 변경
         results = model.fit()
         
         summary = str(results.summary())
@@ -134,7 +135,7 @@ def perform_adf_test(data):
 
 # 차트 생성
 def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods, ticker, tickers_companies_dict):
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, row_heights=[0.7, 0.3])
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
 
     fig.add_trace(go.Candlestick(
         x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
@@ -163,15 +164,13 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
     if rsi_flag:
         df = add_rsi(df, rsi_periods)
         fig.add_trace(go.Scatter(x=df.index, y=df[f'RSI_{rsi_periods}'], name=f'RSI {rsi_periods}', 
-                                 line=dict(color=color_palette['rsi'], width=1)), row=2, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+                                 line=dict(color=color_palette['rsi'], width=1)), row=3, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
 
     fig.update_layout(
         title=f"{tickers_companies_dict[ticker]}'s stock price",
-        yaxis_title="Price",
-        xaxis_rangeslider_visible=False,
-        height=800,
+        height=900,
         plot_bgcolor=color_palette['background'],
         paper_bgcolor=color_palette['background'],
         font_color=color_palette['text'],
@@ -182,7 +181,13 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
 
+    # Update y-axis titles
+    fig.update_yaxes(title_text="Price", row=1, col=1)
+    fig.update_yaxes(title_text="Volume", row=2, col=1)
+    fig.update_yaxes(title_text="RSI", row=3, col=1)
+
     return fig
+
 
 # 시계열 분해 차트
 def create_decomposition_chart(log_data, diff_data, trend, seasonal, residual):
@@ -214,28 +219,44 @@ def create_decomposition_chart(log_data, diff_data, trend, seasonal, residual):
 
     return fig
 
-# 메인 함수
+# 메인 함수 
 def main():
     st.title("티커 기술적 분석 웹 서비스")
+    # 사용자 매뉴얼
+    st.write("""
+    ## 사용자 매뉴얼
+    1. 사이드바에서 분석하고 싶은 S&P 500 주식을 선택하세요.
+    2. 분석하고 싶은 기간의 시작일과 종료일을 선택하세요.
+    3. 원하는 기술적 지표(거래량, SMA, 볼린저 밴드, RSI)를 선택하고 매개변수를 조정하세요.
+    4. 차트를 통해 주가의 움직임과 기술적 지표를 확인하세요.
+    5. 'ARIMA 분석 수행' 버튼을 클릭하여 향후 30일간의 가격 예측과 추세 분석 결과를 확인하세요.
+    6. '시계열 분해 수행' 버튼을 클릭하여 상세한 시계열 분석 결과를 확인하세요.
+    7. 계절성, 잔차, 정상성 검정 결과를 통해 주가의 특성을 파악하세요.
+    """)
 
     # 사이드바
     st.sidebar.header("주식 매개변수")
     available_tickers, tickers_companies_dict = get_sp500_components()
     ticker = st.sidebar.selectbox("티커", available_tickers, format_func=tickers_companies_dict.get)
-    start_date = st.sidebar.date_input("시작일", datetime.date(2019, 1, 1))
-    end_date = st.sidebar.date_input("종료일", datetime.date.today())
+    
+    # 시작일을 1년 전으로 설정
+    end_date = datetime.date.today()
+    start_date = end_date - datetime.timedelta(days=365)
+    
+    start_date = st.sidebar.date_input("시작일", start_date)
+    end_date = st.sidebar.date_input("종료일", end_date)
 
     if start_date > end_date:
         st.sidebar.error("종료일은 시작일 이후여야 합니다.")
 
     st.sidebar.header("기술적 분석 매개변수")
-    volume_flag = st.sidebar.checkbox(label="거래량 추가")
-    sma_flag = st.sidebar.checkbox(label="SMA 추가")
+    volume_flag = st.sidebar.checkbox(label="거래량 추가", value=True)
+    sma_flag = st.sidebar.checkbox(label="SMA 추가", value=True)
     sma_periods = st.sidebar.number_input("SMA 기간", min_value=1, max_value=50, value=20, step=1)
-    bb_flag = st.sidebar.checkbox(label="볼린저 밴드 추가")
+    bb_flag = st.sidebar.checkbox(label="볼린저 밴드 추가", value=True)
     bb_periods = st.sidebar.number_input("볼린저 밴드 기간", min_value=1, max_value=50, value=20, step=1)
     bb_std = st.sidebar.number_input("표준편차 수", min_value=1, max_value=4, value=2, step=1)
-    rsi_flag = st.sidebar.checkbox(label="RSI 추가")
+    rsi_flag = st.sidebar.checkbox(label="RSI 추가", value=True)
     rsi_periods = st.sidebar.number_input("RSI 기간", min_value=1, max_value=50, value=14, step=1)
 
     # 데이터 로드
@@ -324,18 +345,6 @@ def main():
             st.subheader("정상성 검정 (ADF 테스트)")
             st.info("원본 데이터: " + perform_adf_test(log_data))
             st.info("차분된 데이터: " + perform_adf_test(diff_data))
-
-    # 사용자 매뉴얼
-    st.write("""
-    ## 사용자 매뉴얼
-    1. 사이드바에서 분석하고 싶은 S&P 500 주식을 선택하세요.
-    2. 분석하고 싶은 기간의 시작일과 종료일을 선택하세요.
-    3. 원하는 기술적 지표(거래량, SMA, 볼린저 밴드, RSI)를 선택하고 매개변수를 조정하세요.
-    4. 차트를 통해 주가의 움직임과 기술적 지표를 확인하세요.
-    5. 'ARIMA 분석 수행' 버튼을 클릭하여 향후 30일간의 가격 예측과 추세 분석 결과를 확인하세요.
-    6. '시계열 분해 수행' 버튼을 클릭하여 상세한 시계열 분석 결과를 확인하세요.
-    7. 계절성, 잔차, 정상성 검정 결과를 통해 주가의 특성을 파악하세요.
-    """)
 
     # 추가 정보
     st.write("""
