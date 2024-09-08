@@ -307,8 +307,8 @@ def main():
     # 사이드바 설정
     st.sidebar.header("주식 매개변수")
     available_tickers, tickers_companies_dict = get_sp500_components()
-    #ticker = st.sidebar.selectbox("티커", available_tickers, format_func=tickers_companies_dict.get)
-    ticker = st.sidebar.text_input("티커 입력 (예: AAPL, GOOGL)", value="AAPL")
+    ticker = st.sidebar.selectbox("티커", available_tickers, format_func=tickers_companies_dict.get)
+    #ticker = st.sidebar.text_input("티커 입력 (예: AAPL, GOOGL)", value="AAPL")
     
     # 시작일을 1년 전으로 설정
     end_date = datetime.date.today()
