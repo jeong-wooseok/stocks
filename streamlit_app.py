@@ -82,42 +82,36 @@ def perform_arima_analysis(data):
         if len(close_data) < 30:
             return None, None, "데이터가 충분하지 않습니다. 최소 30일 이상의 데이터가 필요합니다.", None, None, None
         
-        log_returns = np.log(close_data / close_data.shift(1)).dropna()
+        # 로그 변환
+        log_data = np.log(close_data)
         
-        # ARIMA 모델 파라미터 조정
-        model = ARIMA(log_returns, order=(3,1,3))  # p=3, d=1, q=3로 변경
+        # ARIMA 모델 적합
+        model = ARIMA(log_data, order=(1,1,1))
         results = model.fit()
         
         summary = str(results.summary())
         
-        forecast_log_returns = results.forecast(steps=30)
-        forecast_log_7 = forecast_log_returns[:7]
+        # 로그 스케일로 예측
+        forecast_log = results.forecast(steps=30)
+        forecast_log_7 = forecast_log[:7]
         
-        # 수익률을 가격으로 변환
+        # 원래 스케일로 변환
         last_price = close_data.iloc[-1]
-        forecast_30 = last_price * np.exp(forecast_log_returns.cumsum())
-        forecast_7 = last_price * np.exp(forecast_log_7.cumsum())
+        forecast_30 = np.exp(forecast_log)
+        forecast_7 = np.exp(forecast_log_7)
         
         # 변동성 계산
-        volatility = calculate_volatility(log_returns)
+        returns = close_data.pct_change().dropna()
+        volatility = calculate_volatility(returns)
         current_volatility = volatility.iloc[-1]
         
-        # GARCH 모델을 사용한 변동성 예측
-        garch_model = arch_model(log_returns, vol='GARCH', p=1, q=1)
-        garch_results = garch_model.fit(disp='off')
-        garch_forecast = garch_results.forecast(horizon=30)
-        future_volatility = garch_forecast.variance.iloc[-1].mean() ** 0.5 * np.sqrt(252)
-        
-        # 추세 판단 로직 개선
+        # 추세 판단
         percent_change = ((forecast_30.iloc[-1] - last_price) / last_price) * 100
-        volatility_ratio = future_volatility / current_volatility
         
-        if abs(percent_change) > 10 and volatility_ratio > 1.2:
-            trend = "강한 " + ("상승" if percent_change > 0 else "하락")
-        elif abs(percent_change) > 5:
-            trend = "약한 " + ("상승" if percent_change > 0 else "하락")
-        elif volatility_ratio > 1.5:
-            trend = "높은 변동성 예상"
+        if percent_change > 5:
+            trend = "상승"
+        elif percent_change < -5:
+            trend = "하락"
         else:
             trend = "횡보"
         
@@ -153,7 +147,11 @@ def perform_adf_test(data):
 
 # 차트 생성
 def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods, ticker, tickers_companies_dict):
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.2, 0.2])
+    # 서브플롯 개수 결정
+    subplot_count = 1 + volume_flag + rsi_flag
+    row_heights = [0.6] + [0.2] * (subplot_count - 1)
+    
+    fig = make_subplots(rows=subplot_count, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=row_heights)
 
     # 메인 캔들스틱 차트
     fig.add_trace(go.Candlestick(
@@ -176,22 +174,27 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
         fig.add_trace(go.Scatter(x=df.index, y=df[f'BB_lower_{bb_periods}'], name=f'BB Lower', 
                                  line=dict(color=color_palette['bb_lower'], width=1)), row=1, col=1)
 
+    current_row = 2
+
     # 거래량 차트
     if volume_flag:
         fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', 
-                             marker_color=color_palette['volume']), row=2, col=1)
+                             marker_color=color_palette['volume']), row=current_row, col=1)
+        fig.update_yaxes(title_text="Volume", row=current_row, col=1)
+        current_row += 1
 
     # RSI 차트
     if rsi_flag:
         df = add_rsi(df, rsi_periods)
         fig.add_trace(go.Scatter(x=df.index, y=df[f'RSI_{rsi_periods}'], name=f'RSI {rsi_periods}', 
-                                 line=dict(color=color_palette['rsi'], width=1)), row=3, col=1)
-        fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
-        fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
+                                 line=dict(color=color_palette['rsi'], width=1)), row=current_row, col=1)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=current_row, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=current_row, col=1)
+        fig.update_yaxes(title_text="RSI", row=current_row, col=1)
 
     fig.update_layout(
         title=f"{tickers_companies_dict[ticker]}'s stock price",
-        height=900,
+        height=200 * subplot_count,
         plot_bgcolor=color_palette['background'],
         paper_bgcolor=color_palette['background'],
         font_color=color_palette['text'],
@@ -202,15 +205,15 @@ def create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_perio
     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor=color_palette['grid'])
 
-    # Update y-axis titles
-    fig.update_yaxes(title_text="Price", row=1, col=1)
-    fig.update_yaxes(title_text="Volume", row=2, col=1)
-    fig.update_yaxes(title_text="RSI", row=3, col=1)
-
     # 각 서브플롯에 대해 y축 범위 설정
+    fig.update_yaxes(title_text="Price", row=1, col=1)
     fig.update_yaxes(range=[df['Low'].min()*0.95, df['High'].max()*1.05], row=1, col=1)
-    fig.update_yaxes(range=[0, df['Volume'].max()*1.1], row=2, col=1)
-    fig.update_yaxes(range=[0, 100], row=3, col=1)
+    
+    if volume_flag:
+        fig.update_yaxes(range=[0, df['Volume'].max()*1.1], row=2, col=1)
+    
+    if rsi_flag:
+        fig.update_yaxes(range=[0, 100], row=subplot_count, col=1)
 
     return fig
 
@@ -304,6 +307,7 @@ def main():
 
     # 차트 생성
     st.plotly_chart(create_stock_chart(df, volume_flag, sma_flag, sma_periods, bb_flag, bb_periods, bb_std, rsi_flag, rsi_periods, ticker, tickers_companies_dict), use_container_width=True)
+
 
     # ARIMA 분석
     st.header("ARIMA 모델을 이용한 주가 예측")
