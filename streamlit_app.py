@@ -11,7 +11,7 @@ from statsmodels.tsa.stattools import adfuller
 import numpy as np
 from statsmodels.tsa.arima.model import ARIMA
 from arch import arch_model
-from pmdarima import auto_arima
+from itertools import product
 
 # 차트 색상 팔레트
 color_palette = {
@@ -73,8 +73,6 @@ def add_rsi(df, period):
 def calculate_volatility(returns, window=20):
     return returns.rolling(window=window).std() * np.sqrt(252)
 
-# ARIMA 분석
-
 
 def perform_arima_analysis(data):
     try:
@@ -89,11 +87,21 @@ def perform_arima_analysis(data):
         # 로그 변환
         log_data = np.log(close_data)
         
-        # auto_arima를 사용하여 최적의 파라미터 찾기
-        auto_model = auto_arima(log_data, start_p=1, start_q=1, max_p=5, max_q=5, m=1, d=None, trace=False,
-                                error_action='ignore', suppress_warnings=True, stepwise=True)
+        # 간단한 그리드 서치를 통한 최적 파라미터 찾기
+        best_aic = np.inf
+        best_order = None
+        for p, d, q in product(range(0, 3), range(0, 2), range(0, 3)):
+            try:
+                model = ARIMA(log_data, order=(p, d, q))
+                results = model.fit()
+                if results.aic < best_aic:
+                    best_aic = results.aic
+                    best_order = (p, d, q)
+            except:
+                continue
         
-        best_order = auto_model.order
+        if best_order is None:
+            raise ValueError("적합한 ARIMA 모델을 찾을 수 없습니다.")
         
         # 최적의 파라미터로 ARIMA 모델 적합
         model = ARIMA(log_data, order=best_order)
