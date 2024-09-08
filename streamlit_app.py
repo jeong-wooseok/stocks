@@ -43,9 +43,21 @@ def get_sp500_components():
     tickers_companies_dict = dict(zip(df["Symbol"], df["Security"]))
     return tickers, tickers_companies_dict
 
-@st.cache_data
-def load_data(symbol, start, end):
-    return yf.download(symbol, start, end)
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_data(symbol, start, end, retries=3):
+    for attempt in range(retries):
+        try:
+            data = yf.download(symbol, start=start, end=end, progress=False)
+            if data.empty:
+                raise ValueError(f"No data available for {symbol}")
+            return data
+        except Exception as e:
+            if attempt < retries - 1:
+                st.warning(f"데이터 로딩 중 오류 발생. 재시도 중... (시도 {attempt + 1}/{retries})")
+                sleep(2)  # 재시도 전 잠시 대기
+            else:
+                st.error(f"데이터를 불러오는 데 실패했습니다. 오류: {str(e)}")
+                return pd.DataFrame()  # 빈 DataFrame 반환
 
 @st.cache_data
 def convert_df_to_csv(df):
@@ -293,8 +305,7 @@ def main():
     6. '시계열 분해 수행' 버튼을 클릭하여 상세한 시계열 분석 결과를 확인하세요.
     7. 계절성, 잔차, 정상성 검정 결과를 통해 주가의 특성을 파악하세요.
     """)
-
-    # 사이드바
+    # 사이드바 설정
     st.sidebar.header("주식 매개변수")
     available_tickers, tickers_companies_dict = get_sp500_components()
     ticker = st.sidebar.selectbox("티커", available_tickers, format_func=tickers_companies_dict.get)
@@ -308,7 +319,16 @@ def main():
 
     if start_date > end_date:
         st.sidebar.error("종료일은 시작일 이후여야 합니다.")
+        return
 
+    # 데이터 로드
+    with st.spinner("데이터 로딩 중..."):
+        df = load_data(ticker, start_date, end_date)
+
+    if df.empty:
+        st.warning("선택한 티커에 대한 데이터를 불러올 수 없습니다. 다른 티커를 선택해 주세요.")
+        return
+        
     st.sidebar.header("기술적 분석 매개변수")
     volume_flag = st.sidebar.checkbox(label="거래량 추가", value=True)
     sma_flag = st.sidebar.checkbox(label="SMA 추가", value=True)
